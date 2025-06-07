@@ -24,6 +24,12 @@ wheels/
 venv/
 env/
 ENV/
+.venv/
+*/.venv/
+interior_multi_agent/.venv/
+.env
+.python-version
+pythonenv*
 
 # IDE
 .idea/
