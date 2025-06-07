@@ -209,3 +209,32 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ---
 
 **🎯 Interior Firebase System** - 인테리어 업무의 미래를 만들어갑니다! 🚀 
+
+# Interior Agent
+
+Firebase MCP API와 통합된 인테리어 에이전트 프로젝트입니다.
+
+## 프로젝트 구조
+
+- `firebase-mcp-api/`: Firebase Cloud Functions를 사용한 MCP API 구현
+- `interior_agents/`: 인테리어 에이전트 관련 Python 코드
+
+## 설치 및 실행
+
+1. 필요한 의존성 설치:
+```bash
+# Firebase Functions 의존성 설치
+cd firebase-mcp-api/functions
+npm install
+
+# Python 의존성 설치
+cd ../../interior_agents
+pip install -r requirements.txt
+```
+
+2. 환경 변수 설정:
+- `.env` 파일을 생성하고 필요한 환경 변수를 설정하세요.
+
+## 라이선스
+
+이 프로젝트는 MIT 라이선스를 따릅니다.
