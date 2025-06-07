@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+env/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Local development settings
+.env
+.env.local
+.env.*.local
+
+# Firebase
+firebase-debug.log
+firebase-debug.*.log
+.firebase/
+
+# System Files
+.DS_Store
+Thumbs.db
+
+# Node modules (if using Firebase functions)
+node_modules/
+
+# Distribution directories
+dist/
+build/
+
+# Coverage directory
+coverage/
+
+# Temporary files
+*.tmp
+*.temp 
