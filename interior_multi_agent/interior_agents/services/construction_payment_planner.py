@@ -12,17 +12,25 @@ def request_site_address() -> str:
     """
     return "현장 주소를 입력해 주세요."
 
-def search_address_info(address: str, firebase_query_function) -> dict:
+def search_address_info(address: str, firebase_query_function=None) -> dict:
     """addresses 컬렉션에서 주소 관련 정보를 조회합니다.
     
     Args:
         address: 검색할 현장 주소
-        firebase_query_function: Firebase 컬렉션 조회 함수
+        firebase_query_function: Firebase 컬렉션 조회 함수 (optional, 없으면 자동 import)
         
     Returns:
         dict: 조회 결과와 추출된 정보
     """
     try:
+        # Firebase 함수가 없으면 자동 import
+        if firebase_query_function is None:
+            try:
+                from ..tools.firebase_tools import query_any_collection
+            except ImportError:
+                from interior_agents.tools.firebase_tools import query_any_collection
+            firebase_query_function = query_any_collection
+        
         # 주소 검증 및 표준화
         validator = AddressValidator()
         validation_result = validator.validate_address_format(address)
@@ -40,28 +48,66 @@ def search_address_info(address: str, firebase_query_function) -> dict:
         # addresses 컬렉션 조회
         response = firebase_query_function("addresses", limit=100)
         
-        if not response.get("success"):
+        print(f"🔍 Firebase 응답 상태: {response.get('status')}")  # 디버깅용
+        
+        # Firebase 응답에서 documents 추출
+        documents = response.get("raw_data", {}).get("data", {}).get("documents", [])
+        
+        # Firebase 응답이 성공인지 확인 (documents가 있거나 status가 성공이면 OK)
+        is_success = (
+            response.get("status") == "success" or 
+            response.get("raw_data", {}).get("success", False) or
+            len(documents) > 0  # documents가 있으면 성공으로 간주
+        )
+        
+        if not is_success:
+            error_details = f"""
+Firebase addresses 컬렉션 조회 실패!
+
+🔍 응답 상태: {response.get('status')}
+📊 문서 수: {len(documents)}개
+📝 응답 메시지: {response.get('message', '메시지 없음')}
+🔗 raw_data 성공 여부: {response.get("raw_data", {}).get("success", "정보 없음")}
+
+응답 구조: {list(response.keys())}
+            """
             return {
                 "status": "error",
-                "message": f"addresses 컬렉션 조회 실패: {response.get('message', '알 수 없는 오류')}"
+                "message": error_details.strip()
             }
-        
-        documents = response.get("raw_data", {}).get("data", {}).get("documents", [])
+        print(f"📊 addresses 컬렉션에서 {len(documents)}개 문서를 조회했습니다.")
         
         # 주소와 매칭되는 문서 찾기 (정확한 매칭 + 유사도 매칭)
         matching_doc = None
         all_addresses = []
         
-        for doc in documents:
+        print(f"🔍 검색 대상 주소: '{address}'")
+        print(f"📍 표준화된 주소: '{standardized_addr}'")
+        print(f"📋 데이터베이스의 주소들:")
+        
+        for i, doc in enumerate(documents, 1):
             doc_data = doc.get("data", {})
             doc_address = doc_data.get("address", "")
-            all_addresses.append(doc_address)
+            doc_description = doc_data.get("description", "")
+            all_addresses.append(f"{doc_address} (설명: {doc_description})")
+            print(f"   {i:2d}. {doc_address}")
+            if doc_description:
+                print(f"       설명: {doc_description}")
             
-            # 1차: 정확한 부분 매칭
-            if (address.strip() in doc_address or doc_address in address.strip() or
-                standardized_addr in doc_address or doc_address in standardized_addr):
-                matching_doc = doc_data
-                print(f"✅ 정확한 매칭 찾음: {doc_address}")
+            # 1차: 정확한 부분 매칭 (address와 description 모두 확인)
+            matched = False
+            for field_name, field_value in [("address", doc_address), ("description", doc_description)]:
+                if not field_value:
+                    continue
+                    
+                if (address.strip() in field_value or field_value in address.strip() or
+                    standardized_addr in field_value or field_value in standardized_addr):
+                    matching_doc = doc_data
+                    print(f"✅ 정확한 매칭 찾음 ({field_name}): {field_value}")
+                    matched = True
+                    break
+            
+            if matched:
                 break
         
         # 2차: 유사도 기반 매칭 (정확한 매칭이 없을 경우)
@@ -88,9 +134,27 @@ def search_address_info(address: str, firebase_query_function) -> dict:
                         print(f"  - {addr} (유사도: {sim:.2f})")
         
         if not matching_doc:
+            # 디버깅을 위한 상세 정보 제공
+            debug_info = f"""
+❌ 주소 매칭 실패!
+
+🔍 검색한 주소: '{address}'
+📍 표준화된 주소: '{standardized_addr}'
+📊 총 {len(documents)}개 문서 조회됨
+📋 데이터베이스 주소들:
+{chr(10).join([f"   - {addr}" for addr in all_addresses[:5]])}
+{f'   ... 그 외 {len(all_addresses)-5}개 더' if len(all_addresses) > 5 else ''}
+
+💡 해결 방안:
+1. 정확한 주소를 입력해주세요
+2. 시/도, 구/군, 동 정보를 포함해주세요
+3. 위 목록에서 유사한 주소를 찾아 다시 시도해주세요
+            """
+            
             return {
                 "status": "not_found",
-                "message": f"주소 '{address}'와 매칭되는 정보를 찾을 수 없습니다.",
+                "message": debug_info.strip(),
+                "available_addresses": all_addresses[:10],  # 최대 10개까지
                 "suggestions": validator.suggest_corrections(address) if validation_result else []
             }
         
@@ -100,7 +164,7 @@ def search_address_info(address: str, firebase_query_function) -> dict:
                 "address": matching_doc.get("address", ""),
                 "startDate": matching_doc.get("startDate", ""),
                 "endDate": matching_doc.get("endDate", ""),
-                "totalAmount": matching_doc.get("totalAmount", ""),
+                "totalAmount": matching_doc.get("totalAmount", "") or matching_doc.get("contractAmount", ""),
                 "phoneLastFourDigits": matching_doc.get("phoneLastFourDigits", "")
             },
             "message": "addresses 컬렉션에서 정보를 찾았습니다."
@@ -112,17 +176,25 @@ def search_address_info(address: str, firebase_query_function) -> dict:
             "message": f"addresses 컬렉션 조회 중 오류: {str(e)}"
         }
 
-def search_schedule_info(address: str, firebase_query_function) -> dict:
+def search_schedule_info(address: str, firebase_query_function=None) -> dict:
     """schedules 컬렉션에서 공사 일정 정보를 조회합니다.
     
     Args:
         address: 검색할 현장 주소
-        firebase_query_function: Firebase 컬렉션 조회 함수
+        firebase_query_function: Firebase 컬렉션 조회 함수 (optional, 없으면 자동 import)
         
     Returns:
         dict: 조회 결과와 시작일/마감일 정보
     """
     try:
+        # Firebase 함수가 없으면 자동 import
+        if firebase_query_function is None:
+            try:
+                from ..tools.firebase_tools import query_any_collection
+            except ImportError:
+                from interior_agents.tools.firebase_tools import query_any_collection
+            firebase_query_function = query_any_collection
+        
         # 주소 검증 및 표준화
         validator = AddressValidator()
         standardized_addr = validator.extract_address_components(address).standardized
@@ -383,27 +455,45 @@ def format_payment_table(payment_schedule: List[dict]) -> str:
     
     return table
 
-def create_construction_payment_plan(address: str, firebase_query_function) -> dict:
-    """공사 분할 지급 계획을 전체적으로 처리하는 메인 함수입니다.
+def make_payment_plan(address: str) -> dict:
+    """Creates a construction payment plan with installment schedule.
+    
+    This function generates a complete payment plan for construction projects,
+    including installment amounts, dates, and final payment calculations.
     
     Args:
-        address: 현장 주소
-        firebase_query_function: Firebase 컬렉션 조회 함수
+        address (str): Construction site address to search for project information
         
     Returns:
-        dict: 완성된 분할 지급 계획
+        dict: Complete payment plan with the following structure:
+            - status: "success" or "error"
+            - summary_info: Project details and total amount
+            - payment_schedule: List of payment installments
+            - payment_table: Formatted table for display
+            - calculation_summary: Verification of calculations
+            - message: Status message
     """
     try:
+        # Firebase 함수 import
+        try:
+            from ..tools.firebase_tools import query_any_collection
+        except ImportError:
+            # ADK Web 환경에서는 절대 import 시도
+            from interior_agents.tools.firebase_tools import query_any_collection
+        
         # 1. addresses 컬렉션 조회
-        address_result = search_address_info(address, firebase_query_function)
+        address_result = search_address_info(address, query_any_collection)
         
         if address_result["status"] == "error":
             return address_result
         
         if address_result["status"] == "not_found":
+            # 상세한 디버깅 정보 포함하여 반환
             return {
                 "status": "error",
-                "message": f"주소 '{address}'에 대한 정보를 찾을 수 없습니다. 정확한 주소를 입력해 주세요."
+                "message": f"📍 주소 정보를 찾을 수 없습니다.\n\n{address_result.get('message', '')}",
+                "available_addresses": address_result.get('available_addresses', []),
+                "suggestions": address_result.get('suggestions', [])
             }
         
         address_data = address_result["data"]
@@ -411,7 +501,7 @@ def create_construction_payment_plan(address: str, firebase_query_function) -> d
         # 2. schedules 컬렉션 조회 (날짜 정보가 부족한 경우)
         schedule_data = {}
         if not address_data.get("startDate") or not address_data.get("endDate"):
-            schedule_result = search_schedule_info(address, firebase_query_function)
+            schedule_result = search_schedule_info(address, query_any_collection)
             if schedule_result["status"] == "success":
                 schedule_data = schedule_result["data"]
         
@@ -425,11 +515,22 @@ def create_construction_payment_plan(address: str, firebase_query_function) -> d
                 "message": "총 공사금액 정보가 없습니다. 총 공사금액을 입력해 주세요."
             }
         
+        # 날짜 정보가 없으면 기본값 제공
         if not merged_info.get("startDate") or not merged_info.get("endDate"):
-            return {
-                "status": "error",
-                "message": "공사 시작일 또는 마감일 정보가 부족합니다. schedules 컬렉션에서도 찾을 수 없었습니다."
-            }
+            from datetime import datetime, timedelta
+            today = datetime.now()
+            
+            # 기본값: 오늘부터 30일 후
+            if not merged_info.get("startDate"):
+                merged_info["startDate"] = today.strftime("%Y-%m-%d")
+                
+            if not merged_info.get("endDate"):
+                end_date = today + timedelta(days=30)
+                merged_info["endDate"] = end_date.strftime("%Y-%m-%d")
+            
+            print(f"⚠️ 공사 날짜 정보가 부족하여 기본값을 사용합니다:")
+            print(f"   시작일: {merged_info['startDate']}")
+            print(f"   마감일: {merged_info['endDate']}")
         
         # 5. 총 공사금액을 숫자로 변환
         try:
@@ -475,4 +576,41 @@ def create_construction_payment_plan(address: str, firebase_query_function) -> d
         return {
             "status": "error",
             "message": f"공사 분할 지급 계획 생성 중 오류: {str(e)}"
-        } 
+        }
+
+def test_payment_system() -> dict:
+    """Tests the payment planning system with a known address.
+    
+    This function can be used to verify the system is working correctly
+    in the ADK Web environment.
+    
+    Returns:
+        dict: Test result with system status
+    """
+    try:
+        test_address = "월배아이파크 1차 109동 2401호"
+        result = make_payment_plan(test_address)
+        
+        if result.get("status") == "success":
+            return {
+                "status": "success",
+                "message": "✅ Payment planning system is working correctly!",
+                "test_address": test_address,
+                "total_amount": result.get("calculation_summary", {}).get("total_amount", 0),
+                "total_rounds": result.get("calculation_summary", {}).get("total_rounds", 0)
+            }
+        else:
+            return {
+                "status": "error", 
+                "message": f"❌ System test failed: {result.get('message', 'Unknown error')}",
+                "test_address": test_address
+            }
+            
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"❌ System test error: {str(e)}"
+        }
+
+# 하위 호환성을 위한 별칭
+create_construction_payment_plan = make_payment_plan 

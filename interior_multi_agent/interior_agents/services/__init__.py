@@ -10,7 +10,8 @@ from .site_manager import register_site, get_site_info, list_all_sites
 # 공사 분할 지급 계획 서비스
 from .construction_payment_planner import (
     request_site_address,
-    create_construction_payment_plan,
+    make_payment_plan,
+    test_payment_system,
     search_address_info,
     search_schedule_info,
     calculate_payment_schedule,
@@ -25,7 +26,8 @@ __all__ = [
     
     # 공사 분할 지급 계획
     'request_site_address',
-    'create_construction_payment_plan',
+    'make_payment_plan',
+    'test_payment_system',
     'search_address_info',
     'search_schedule_info',
     'calculate_payment_schedule',
