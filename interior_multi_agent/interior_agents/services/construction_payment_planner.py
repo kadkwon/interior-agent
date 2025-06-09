@@ -576,7 +576,7 @@ def make_payment_plan(address: str) -> dict:
         return {
             "status": "error",
             "message": f"공사 분할 지급 계획 생성 중 오류: {str(e)}"
-        }
+        } 
 
 def test_payment_system() -> dict:
     """Tests the payment planning system with a known address.
