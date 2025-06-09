@@ -160,6 +160,61 @@ class FirebaseCloudFunctionsClient:
         
         return self._make_request('/firestoreQueryCollection', 'POST', data)
     
+    def add_document(self, collection_path: str, document_data: Dict[str, Any], document_id: str = None) -> Dict[str, Any]:
+        """
+        Firestore 컬렉션에 새 문서를 추가합니다.
+        
+        Args:
+            collection_path: 컬렉션 경로 (예: 'addressesJson', 'schedules')
+            document_data: 추가할 문서 데이터
+            document_id: 문서 ID (없으면 자동 생성)
+            
+        Returns:
+            Dict: 추가 결과
+        """
+        data = {
+            "collectionPath": collection_path,
+            "documentData": document_data
+        }
+        
+        if document_id:
+            data["documentId"] = document_id
+        
+        return self._make_request('/firestoreAddDocument', 'POST', data)
+    
+    def update_document(self, document_path: str, update_data: Dict[str, Any], merge: bool = True) -> Dict[str, Any]:
+        """
+        Firestore 문서를 업데이트합니다.
+        
+        Args:
+            document_path: 문서 경로 (예: 'addressesJson/doc123')
+            update_data: 업데이트할 데이터
+            merge: 기존 데이터와 병합 여부
+            
+        Returns:
+            Dict: 업데이트 결과
+        """
+        data = {
+            "documentPath": document_path,
+            "updateData": update_data,
+            "merge": merge
+        }
+        
+        return self._make_request('/firestoreUpdateDocument', 'POST', data)
+    
+    def delete_document(self, document_path: str) -> Dict[str, Any]:
+        """
+        Firestore 문서를 삭제합니다.
+        
+        Args:
+            document_path: 문서 경로 (예: 'addressesJson/doc123')
+            
+        Returns:
+            Dict: 삭제 결과
+        """
+        data = {"documentPath": document_path}
+        return self._make_request('/firestoreDeleteDocument', 'POST', data)
+    
     # =================
     # 📁 STORAGE APIs
     # =================
