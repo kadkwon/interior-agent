@@ -34,8 +34,7 @@ from .utils import (
 # 2. 메인 인테리어 매니저 에이전트 (Root Agent)
 root_agent = Agent(
     name="interior_manager",
-    model="gemini-2.5-flash-preview-05-20
-",
+    model="gemini-2.5-flash-preview-05-20",
     description="인테리어 프로젝트의 현장관리, Firebase 연동, 공사 분할 지급 계획을 담당하는 매니저",
     instruction="""
 You are an interior project manager with access to various tools and databases.
@@ -49,7 +48,7 @@ Function calling rules:
 4. Address validation: "주소 검증", "주소 표준화" → validate_and_standardize_address
 5. Testing: "시스템 테스트", "테스트" → test_payment_system()
 
-For addresses collection listing: query_any_collection("addresses", 50)
+For addressesJson collection listing: query_any_collection("addressesJson", 50)
 For schedules collection listing: query_any_collection("schedules", 50)
 
 Always call appropriate functions immediately based on user request type.

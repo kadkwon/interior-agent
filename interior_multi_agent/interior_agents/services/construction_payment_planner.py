@@ -13,7 +13,7 @@ def request_site_address() -> str:
     return "현장 주소를 입력해 주세요."
 
 def search_address_info(address: str, firebase_query_function=None) -> dict:
-    """addresses 컬렉션에서 주소 관련 정보를 조회합니다.
+    """addressesJson 컬렉션에서 주소 관련 정보를 조회합니다.
     
     Args:
         address: 검색할 현장 주소
@@ -45,8 +45,8 @@ def search_address_info(address: str, firebase_query_function=None) -> dict:
                 print(f"  💡 {suggestion}")
             print(f"📍 표준화된 주소: {standardized_addr}")
         
-        # addresses 컬렉션 조회
-        response = firebase_query_function("addresses", limit=100)
+        # addressesJson 컬렉션 조회
+        response = firebase_query_function("addressesJson", limit=100)
         
         print(f"🔍 Firebase 응답 상태: {response.get('status')}")  # 디버깅용
         
@@ -62,7 +62,7 @@ def search_address_info(address: str, firebase_query_function=None) -> dict:
         
         if not is_success:
             error_details = f"""
-Firebase addresses 컬렉션 조회 실패!
+Firebase addressesJson 컬렉션 조회 실패!
 
 🔍 응답 상태: {response.get('status')}
 📊 문서 수: {len(documents)}개
@@ -75,7 +75,7 @@ Firebase addresses 컬렉션 조회 실패!
                 "status": "error",
                 "message": error_details.strip()
             }
-        print(f"📊 addresses 컬렉션에서 {len(documents)}개 문서를 조회했습니다.")
+        print(f"📊 addressesJson 컬렉션에서 {len(documents)}개 문서를 조회했습니다.")
         
         # 주소와 매칭되는 문서 찾기 (정확한 매칭 + 유사도 매칭)
         matching_doc = None
@@ -167,13 +167,13 @@ Firebase addresses 컬렉션 조회 실패!
                 "totalAmount": matching_doc.get("totalAmount", "") or matching_doc.get("contractAmount", ""),
                 "phoneLastFourDigits": matching_doc.get("phoneLastFourDigits", "")
             },
-            "message": "addresses 컬렉션에서 정보를 찾았습니다."
+            "message": "addressesJson 컬렉션에서 정보를 찾았습니다."
         }
         
     except Exception as e:
         return {
             "status": "error",
-            "message": f"addresses 컬렉션 조회 중 오류: {str(e)}"
+            "message": f"addressesJson 컬렉션 조회 중 오류: {str(e)}"
         }
 
 def search_schedule_info(address: str, firebase_query_function=None) -> dict:
@@ -300,10 +300,10 @@ def search_schedule_info(address: str, firebase_query_function=None) -> dict:
         }
 
 def merge_project_info(address_data: dict, schedule_data: dict) -> dict:
-    """addresses와 schedules 데이터를 병합합니다.
+    """addressesJson과 schedules 데이터를 병합합니다.
     
     Args:
-        address_data: addresses 컬렉션에서 가져온 데이터
+        address_data: addressesJson 컬렉션에서 가져온 데이터
         schedule_data: schedules 컬렉션에서 가져온 데이터
         
     Returns:
@@ -481,7 +481,7 @@ def make_payment_plan(address: str) -> dict:
             # ADK Web 환경에서는 절대 import 시도
             from interior_agents.tools.firebase_tools import query_any_collection
         
-        # 1. addresses 컬렉션 조회
+        # 1. addressesJson 컬렉션 조회
         address_result = search_address_info(address, query_any_collection)
         
         if address_result["status"] == "error":
