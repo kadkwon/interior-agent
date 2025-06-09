@@ -174,7 +174,7 @@ class FirebaseCloudFunctionsClient:
         """
         data = {
             "collectionPath": collection_path,
-            "documentData": document_data
+            "data": document_data
         }
         
         if document_id:
@@ -196,7 +196,7 @@ class FirebaseCloudFunctionsClient:
         """
         data = {
             "documentPath": document_path,
-            "updateData": update_data,
+            "data": update_data,
             "merge": merge
         }
         
