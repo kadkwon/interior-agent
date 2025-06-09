@@ -53,28 +53,19 @@ def register_new_address(address_data: dict) -> dict:
                 "message": "주소 정보는 필수입니다."
             }
         
-        # 2. 주소 검증 및 표준화
+        # 2. 간단한 주소 처리 (검증 생략)
         validator = AddressValidator()
-        validation_result = validator.validate_address_format(address_data['address'])
         address_info = validator.extract_address_components(address_data['address'])
         
-        if not validation_result['is_valid']:
-            return {
-                "status": "warning", 
-                "message": "주소 형식에 문제가 있지만 등록을 진행합니다.",
-                "issues": validation_result['issues'],
-                "suggestions": validation_result['suggestions']
-            }
-        
-        # 3. 중복 주소 체크
-        duplicate_check = _check_duplicate_address(address_data['address'])
-        if duplicate_check['has_duplicate']:
-            return {
-                "status": "error",
-                "message": f"유사한 주소가 이미 존재합니다: {duplicate_check['similar_address']}",
-                "existing_doc_id": duplicate_check.get('doc_id'),
-                "similarity_score": duplicate_check.get('similarity', 0)
-            }
+        # 3. 중복 주소 체크 (임시 비활성화 - 무한반복 방지)
+        # duplicate_check = _check_duplicate_address(address_data['address'])
+        # if duplicate_check['has_duplicate']:
+        #     return {
+        #         "status": "error",
+        #         "message": f"유사한 주소가 이미 존재합니다: {duplicate_check['similar_address']}",
+        #         "existing_doc_id": duplicate_check.get('doc_id'),
+        #         "similarity_score": duplicate_check.get('similarity', 0)
+        #     }
         
         # 4. 타임스탬프 기반 문서 ID 생성
         timestamp_id = str(int(time.time() * 1000))  # 밀리초 단위 타임스탬프
@@ -125,9 +116,10 @@ def register_new_address(address_data: dict) -> dict:
         result = firebase_client.add_document("addressesJson", document_data, timestamp_id)
         
         if result.get("success"):
+            # 성공 응답 - 항상 success로 반환 (warning 제거)
             return {
                 "status": "success",
-                "message": f"주소가 성공적으로 등록되었습니다.",
+                "message": "주소가 성공적으로 등록되었습니다.",
                 "doc_id": timestamp_id,
                 "standardized_address": address_info.standardized,
                 "confidence_score": address_info.confidence_score,
@@ -186,22 +178,14 @@ def update_existing_address(doc_id: str, update_data: dict) -> dict:
         except json.JSONDecodeError:
             existing_data_json = {}
         
-        # 3. 주소가 변경되는 경우 검증
+        # 3. 주소가 변경되는 경우 간단 처리 (검증 생략)
         if 'address' in update_data:
             validator = AddressValidator()
-            validation_result = validator.validate_address_format(update_data['address'])
             address_info = validator.extract_address_components(update_data['address'])
             
             # 표준화된 주소도 함께 업데이트
             update_data['standardizedAddress'] = address_info.standardized
             update_data['confidenceScore'] = address_info.confidence_score
-            
-            if not validation_result['is_valid']:
-                return {
-                    "status": "warning",
-                    "message": "주소 형식에 문제가 있지만 수정을 진행합니다.",
-                    "issues": validation_result['issues']
-                }
         
         # 4. dataJson 업데이트 준비
         updated_data_json = {**existing_data_json}  # 기존 데이터 복사
