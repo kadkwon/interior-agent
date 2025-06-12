@@ -296,6 +296,294 @@ exports.firestoreQueryCollection = functions.https.onRequest((req, res) => {
   });
 });
 
+// Firestore 문서 생성
+exports.firestoreAddDocument = functions.https.onRequest((req, res) => {
+  return cors(req, res, async () => {
+    try {
+      const { collectionPath, data, documentId } = req.body;
+      
+      if (!collectionPath) {
+        throw new Error('collectionPath가 필요합니다.');
+      }
+      
+      if (!data || typeof data !== 'object') {
+        throw new Error('data 객체가 필요합니다.');
+      }
+      
+      const db = admin.firestore();
+      let docRef;
+      
+      // 문서 ID가 지정된 경우
+      if (documentId) {
+        docRef = db.collection(collectionPath).doc(documentId);
+        await docRef.set(data);
+      } else {
+        // 자동 ID 생성
+        docRef = await db.collection(collectionPath).add(data);
+      }
+      
+      res.status(201).json({
+        success: true,
+        data: {
+          id: docRef.id,
+          path: docRef.path,
+          data: data
+        }
+      });
+    } catch (error) {
+      console.error('Firestore 문서 생성 오류:', error);
+      res.status(500).json({
+        success: false,
+        message: error.message
+      });
+    }
+  });
+});
+
+// Firestore 문서 업데이트
+exports.firestoreUpdateDocument = functions.https.onRequest((req, res) => {
+  return cors(req, res, async () => {
+    try {
+      const { collectionPath, documentId, data, merge = true } = req.body;
+      
+      if (!collectionPath) {
+        throw new Error('collectionPath가 필요합니다.');
+      }
+      
+      if (!documentId) {
+        throw new Error('documentId가 필요합니다.');
+      }
+      
+      if (!data || typeof data !== 'object') {
+        throw new Error('data 객체가 필요합니다.');
+      }
+      
+      const db = admin.firestore();
+      const docRef = db.collection(collectionPath).doc(documentId);
+      
+      // 문서 존재 확인
+      const doc = await docRef.get();
+      if (!doc.exists) {
+        throw new Error(`문서를 찾을 수 없습니다: ${collectionPath}/${documentId}`);
+      }
+      
+      // 업데이트 실행
+      if (merge) {
+        await docRef.update(data);
+      } else {
+        await docRef.set(data);
+      }
+      
+      // 업데이트된 데이터 조회
+      const updatedDoc = await docRef.get();
+      
+      res.status(200).json({
+        success: true,
+        data: {
+          id: updatedDoc.id,
+          path: updatedDoc.ref.path,
+          data: updatedDoc.data()
+        }
+      });
+    } catch (error) {
+      console.error('Firestore 문서 업데이트 오류:', error);
+      res.status(500).json({
+        success: false,
+        message: error.message
+      });
+    }
+  });
+});
+
+// Firestore 문서 삭제
+exports.firestoreDeleteDocument = functions.https.onRequest((req, res) => {
+  return cors(req, res, async () => {
+    try {
+      // 기존 클라이언트 호환성을 위해 documentPath도 지원
+      let { collectionPath, documentId, documentPath } = req.body || req.query;
+      
+      // documentPath가 제공된 경우 분리 처리
+      if (documentPath && !collectionPath && !documentId) {
+        const pathParts = documentPath.split('/');
+        if (pathParts.length === 2) {
+          collectionPath = pathParts[0];
+          documentId = pathParts[1];
+        } else {
+          throw new Error('documentPath 형식이 올바르지 않습니다. collection/document 형식이어야 합니다.');
+        }
+      }
+      
+      if (!collectionPath) {
+        throw new Error('collectionPath가 필요합니다.');
+      }
+      
+      if (!documentId) {
+        throw new Error('documentId가 필요합니다.');
+      }
+      
+      const db = admin.firestore();
+      const docRef = db.collection(collectionPath).doc(documentId);
+      
+      // 문서 존재 확인
+      const doc = await docRef.get();
+      if (!doc.exists) {
+        throw new Error(`문서를 찾을 수 없습니다: ${collectionPath}/${documentId}`);
+      }
+      
+      // 삭제 전 데이터 백업
+      const deletedData = doc.data();
+      
+      // 문서 삭제
+      await docRef.delete();
+      
+      res.status(200).json({
+        success: true,
+        data: {
+          id: documentId,
+          path: docRef.path,
+          deletedData: deletedData,
+          message: '문서가 성공적으로 삭제되었습니다.'
+        }
+      });
+    } catch (error) {
+      console.error('Firestore 문서 삭제 오류:', error);
+      res.status(500).json({
+        success: false,
+        message: error.message
+      });
+    }
+  });
+});
+
+// Firestore 문서 설정 (덮어쓰기)
+exports.firestoreSetDocument = functions.https.onRequest((req, res) => {
+  return cors(req, res, async () => {
+    try {
+      const { collectionPath, documentId, data } = req.body;
+      
+      if (!collectionPath) {
+        throw new Error('collectionPath가 필요합니다.');
+      }
+      
+      if (!documentId) {
+        throw new Error('documentId가 필요합니다.');
+      }
+      
+      if (!data || typeof data !== 'object') {
+        throw new Error('data 객체가 필요합니다.');
+      }
+      
+      const db = admin.firestore();
+      const docRef = db.collection(collectionPath).doc(documentId);
+      
+      // 문서 완전 덮어쓰기
+      await docRef.set(data);
+      
+      res.status(200).json({
+        success: true,
+        data: {
+          id: docRef.id,
+          path: docRef.path,
+          data: data
+        }
+      });
+    } catch (error) {
+      console.error('Firestore 문서 설정 오류:', error);
+      res.status(500).json({
+        success: false,
+        message: error.message
+      });
+    }
+  });
+});
+
+// Firestore 주소 검색 (description 필드 기준)
+exports.firestoreSearchByDescription = functions.https.onRequest((req, res) => {
+  return cors(req, res, async () => {
+    try {
+      const { searchTerm, collectionPath = 'addressesJson', limit = 50, exactMatch = false } = req.body || req.query;
+      
+      if (!searchTerm) {
+        throw new Error('searchTerm이 필요합니다.');
+      }
+      
+      const db = admin.firestore();
+      const collection = db.collection(collectionPath);
+      
+      let query;
+      
+      if (exactMatch) {
+        // 정확한 매칭
+        query = collection.where('description', '==', searchTerm).limit(limit);
+      } else {
+        // 부분 매칭을 위해 모든 문서를 가져와서 필터링
+        query = collection.limit(1000); // 최대 1000개 문서 검색
+      }
+      
+      const snapshot = await query.get();
+      const results = [];
+      
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        const description = data.description || '';
+        
+        if (exactMatch) {
+          // 정확한 매칭인 경우 모든 결과 포함
+          results.push({
+            id: doc.id,
+            path: doc.ref.path,
+            description: description,
+            dataJson: data.dataJson || '{}',
+            relevanceScore: 1.0
+          });
+        } else {
+          // 부분 매칭 확인
+          const searchTermLower = searchTerm.toLowerCase();
+          const descriptionLower = description.toLowerCase();
+          
+          if (descriptionLower.includes(searchTermLower)) {
+            // 단순한 관련성 점수 계산
+            const exactPos = descriptionLower.indexOf(searchTermLower);
+            const relevanceScore = exactPos === 0 ? 1.0 : 
+                                 exactPos > 0 ? 0.8 : 
+                                 descriptionLower.includes(searchTermLower) ? 0.6 : 0.0;
+            
+            results.push({
+              id: doc.id,
+              path: doc.ref.path,
+              description: description,
+              dataJson: data.dataJson || '{}',
+              relevanceScore: relevanceScore
+            });
+          }
+        }
+      });
+      
+      // 관련성 점수로 정렬
+      results.sort((a, b) => b.relevanceScore - a.relevanceScore);
+      
+      // 결과 수 제한
+      const limitedResults = results.slice(0, limit);
+      
+      res.status(200).json({
+        success: true,
+        data: {
+          searchTerm: searchTerm,
+          exactMatch: exactMatch,
+          totalFound: limitedResults.length,
+          results: limitedResults
+        }
+      });
+    } catch (error) {
+      console.error('Firestore 주소 검색 오류:', error);
+      res.status(500).json({
+        success: false,
+        message: error.message
+      });
+    }
+  });
+});
+
 // =================
 // 📁 STORAGE APIs
 // =================
@@ -393,13 +681,35 @@ exports.mcpListApis = functions.https.onRequest((req, res) => {
         {
           category: 'Core',
           endpoints: [
-            { name: 'firebaseGetProject', description: 'Firebase 프로젝트 정보 조회' }
+            { name: 'firebaseGetProject', description: 'Firebase 프로젝트 정보 조회' },
+            { name: 'firebaseGetSdkConfig', description: 'Firebase SDK 설정 조회' }
+          ]
+        },
+        {
+          category: 'Authentication',
+          endpoints: [
+            { name: 'authGetUser', description: '사용자 정보 조회' },
+            { name: 'authListUsers', description: '사용자 목록 조회' }
           ]
         },
         {
           category: 'Firestore',
           endpoints: [
-            { name: 'firestoreGetDocuments', description: 'Firestore 문서 조회' }
+            { name: 'firestoreGetDocuments', description: 'Firestore 문서 조회' },
+            { name: 'firestoreListCollections', description: 'Firestore 컬렉션 목록 조회' },
+            { name: 'firestoreQueryCollection', description: 'Firestore 컬렉션 쿼리' },
+            { name: 'firestoreAddDocument', description: 'Firestore 문서 생성' },
+            { name: 'firestoreUpdateDocument', description: 'Firestore 문서 업데이트' },
+            { name: 'firestoreDeleteDocument', description: 'Firestore 문서 삭제' },
+            { name: 'firestoreSetDocument', description: 'Firestore 문서 설정 (덮어쓰기)' },
+            { name: 'firestoreSearchByDescription', description: 'Firestore 주소 검색 (description 필드 기준)' }
+          ]
+        },
+        {
+          category: 'Storage',
+          endpoints: [
+            { name: 'storageGetDownloadUrl', description: 'Storage 파일 다운로드 URL 조회' },
+            { name: 'storageListFiles', description: 'Storage 파일 목록 조회' }
           ]
         }
       ];
