@@ -43,7 +43,7 @@ except ImportError:
 
 def query_schedule_collection(limit: int = 50) -> dict:
     """
-    Firebase Firestore의 schedule 컬렉션을 조회합니다.
+    Firebase Firestore의 schedules 컬렉션을 조회합니다.
     Firebase MCP 호출 규칙을 적용하여 모든 데이터 조회를 MCP를 통해 처리합니다.
     
     Args:
@@ -54,44 +54,59 @@ def query_schedule_collection(limit: int = 50) -> dict:
     """
     try:
         # 🚨 0.1 Firebase MCP 호출 의무화 검증
-        if not validate_mcp_call("data_query", "schedule", {"limit": limit}):
-            log_operation("query_schedule", "schedule", {"error": "MCP 호출 의무화 검증 실패"}, False)
+        if not validate_mcp_call("data_query", "schedules", {"limit": limit}):
+            log_operation("query_schedules", "schedules", {"error": "MCP 호출 의무화 검증 실패"}, False)
             return {
                 "status": "error",
                 "message": "데이터 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
             }
 
         # 🚨 0.2-1 사용자 요청 분석 및 필요한 Firebase 컬렉션 식별
-        log_operation("query_schedule", "schedule", {"step": "MCP 호출 시작", "limit": limit}, True)
+        log_operation("query_schedules", "schedules", {"step": "MCP 호출 시작", "limit": limit}, True)
         
         # 🚨 0.2-2 적절한 Firebase MCP 함수 호출
-        response = firebase_client.query_collection("schedule", limit=limit)
+        response = firebase_client.query_collection("schedules", limit=limit)
         
         # 🚨 0.2-3 호출 결과 확인 및 검증
-        validated_response = validate_response(response)
+        # 안전한 응답 처리 - bool 타입 체크 추가
+        if not isinstance(response, dict):
+            log_operation("query_schedules", "schedules", {"error": "응답이 dict 타입이 아님"}, False)
+            return {
+                "status": "error",
+                "message": "Firebase 응답 형식이 올바르지 않습니다."
+            }
         
-        if validated_response.get("success"):
-            # 포맷팅된 결과 생성
-            formatted_result = schedule_formatter.format_schedule_data(validated_response)
+        # validate_response는 bool을 반환하므로 response를 직접 사용
+        is_valid = validate_response(response)
+        
+        if is_valid and response.get("success"):
+            # schedules 컬렉션 데이터 포맷팅
+            data = response.get("data", {})
+            documents = data.get("documents", [])
             
-            log_operation("query_schedule", "schedule", {"limit": limit}, True)
+            # 스케줄 데이터를 사용자 친화적으로 포맷팅
+            formatted_result = _format_schedules_data(documents)
+            
+            log_operation("query_schedules", "schedules", {"limit": limit, "count": len(documents)}, True)
             return {
                 "status": "success",
                 "formatted_result": formatted_result,
-                "raw_data": validated_response,
-                "message": f"schedule 컬렉션에서 {limit}개까지 조회했습니다."
+                "raw_data": response,
+                "schedules": documents,
+                "total_count": len(documents),
+                "message": f"schedules 컬렉션에서 {len(documents)}개 문서를 조회했습니다."
             }
         else:
             return {
                 "status": "error",
-                "message": handle_mcp_error(Exception(f"schedule 컬렉션 조회 실패: {validated_response.get('message', '알 수 없는 오류')}"), "query_schedule")
+                "message": handle_mcp_error(Exception(f"schedules 컬렉션 조회 실패: {response.get('message', '알 수 없는 오류') if isinstance(response, dict) else '응답 없음'}"), "query_schedules")
             }
             
     except Exception as e:
-        log_operation("query_schedule", "schedule", {"error": str(e)}, False)
+        log_operation("query_schedules", "schedules", {"error": str(e)}, False)
         return {
             "status": "error",
-            "message": handle_mcp_error(e, "query_schedule")
+            "message": handle_mcp_error(e, "query_schedules")
         }
 
 def get_firebase_project_info() -> dict:
@@ -115,10 +130,10 @@ def get_firebase_project_info() -> dict:
         response = firebase_client.get_project_info()
         
         # 🚨 0.2-3 호출 결과 확인 및 검증
-        validated_response = validate_response(response)
+        is_valid = validate_response(response)
         
-        if validated_response.get("success"):
-            project_data = validated_response.get("data", {})
+        if is_valid and response.get("success"):
+            project_data = response.get("data", {})
             
             log_operation("get_project_info", "project_info", {"project_id": project_data.get('projectId', 'Unknown')}, True)
             return {
@@ -127,7 +142,7 @@ def get_firebase_project_info() -> dict:
                 "message": f"프로젝트 '{project_data.get('projectId', 'Unknown')}'에 연결되었습니다."
             }
         else:
-            return handle_mcp_error(Exception(f"프로젝트 정보 조회 실패: {validated_response.get('message', '알 수 없는 오류')}"), "get_project_info")
+            return handle_mcp_error(Exception(f"프로젝트 정보 조회 실패: {response.get('message', '알 수 없는 오류') if isinstance(response, dict) else '응답 없음'}"), "get_project_info")
             
     except Exception as e:
         log_operation("get_project_info", "project_info", {"error": str(e)}, False)
@@ -154,10 +169,10 @@ def list_firestore_collections() -> dict:
         response = firebase_client.list_collections()
         
         # 🚨 0.2-3 호출 결과 확인 및 검증
-        validated_response = validate_response(response)
+        is_valid = validate_response(response)
         
-        if validated_response.get("success"):
-            collections = validated_response.get("data", {}).get("collections", [])
+        if is_valid and response.get("success"):
+            collections = response.get("data", {}).get("collections", [])
             
             formatted_list = "📋 Firestore 컬렉션 목록:\n"
             for i, collection in enumerate(collections, 1):
@@ -172,7 +187,7 @@ def list_firestore_collections() -> dict:
                 "message": f"총 {len(collections)}개의 컬렉션이 있습니다."
             }
         else:
-            return handle_mcp_error(Exception(f"컬렉션 목록 조회 실패: {validated_response.get('message', '알 수 없는 오류')}"), "list_collections")
+            return handle_mcp_error(Exception(f"컬렉션 목록 조회 실패: {response.get('message', '알 수 없는 오류') if isinstance(response, dict) else '응답 없음'}"), "list_collections")
             
     except Exception as e:
         log_operation("list_collections", "firestore", {"error": str(e)}, False)
@@ -263,10 +278,10 @@ def list_storage_files(prefix: str = "") -> dict:
         response = firebase_client.list_files(prefix=prefix)
         
         # 🚨 0.2-3 호출 결과 확인 및 검증
-        validated_response = validate_response(response)
+        is_valid = validate_response(response)
         
-        if validated_response.get("success"):
-            files = validated_response.get("data", {}).get("files", [])
+        if is_valid and response.get("success"):
+            files = response.get("data", {}).get("files", [])
             
             formatted_list = f"📁 Firebase Storage 파일 목록 (prefix: '{prefix}'):\n"
             formatted_list += f"총 {len(files)}개의 파일이 있습니다.\n\n"
@@ -291,8 +306,79 @@ def list_storage_files(prefix: str = "") -> dict:
                 "message": f"'{prefix}' 경로에서 {len(files)}개의 파일을 조회했습니다."
             }
         else:
-            return handle_mcp_error(Exception(f"Storage 파일 목록 조회 실패: {validated_response.get('message', '알 수 없는 오류')}"), "list_storage")
+            return handle_mcp_error(Exception(f"Storage 파일 목록 조회 실패: {response.get('message', '알 수 없는 오류') if isinstance(response, dict) else '응답 없음'}"), "list_storage")
             
     except Exception as e:
         log_operation("list_storage", "storage", {"error": str(e), "prefix": prefix}, False)
-        return handle_mcp_error(e, "list_storage") 
+        return handle_mcp_error(e, "list_storage")
+
+
+# =================
+# 헬퍼 함수들
+# =================
+
+def _format_schedules_data(documents: list) -> str:
+    """
+    schedules 컬렉션 데이터를 사용자가 읽기 쉬운 형태로 포맷팅합니다.
+    
+    Args:
+        documents: Firebase에서 조회한 문서 리스트
+        
+    Returns:
+        str: 포맷팅된 스케줄 목록 문자열
+    """
+    import json
+    
+    if not documents:
+        return "📅 등록된 스케줄이 없습니다.\n\n새로운 스케줄을 등록하려면 '주소명 날짜 작업유형 등록해줘' 형태로 요청해주세요."
+    
+    formatted_list = "📅 **스케줄 컬렉션 정리**\n\n"
+    
+    for i, doc in enumerate(documents, 1):
+        doc_id = doc.get("id", "Unknown")
+        doc_data = doc.get("data", {})
+        
+        address = doc_data.get("address", "주소 없음")
+        color = doc_data.get("color", "#4A90E2")
+        events_json_str = doc_data.get("eventsJson", "{}")
+        
+        formatted_list += f"**{i}. {address}**\n"
+        formatted_list += f"   - 색상: {color}\n"
+        formatted_list += f"   - 문서ID: {doc_id}\n"
+        
+        # eventsJson 파싱
+        try:
+            events_data = json.loads(events_json_str) if events_json_str else {}
+        except json.JSONDecodeError:
+            events_data = {}
+        
+        if events_data:
+            formatted_list += f"   - 이벤트 수: {len(events_data)}개\n"
+            formatted_list += f"   - 이벤트 목록:\n"
+            
+            # 이벤트를 날짜순으로 정렬
+            sorted_events = sorted(events_data.items(), key=lambda x: x[0].split("_")[0] if "_" in x[0] else x[0])
+            
+            for event_key, event_data in sorted_events[:5]:  # 최대 5개만 표시
+                event_date = event_key.split("_")[0] if "_" in event_key else event_key
+                event_title = event_data.get("title", "")
+                event_memo = event_data.get("memo", "")
+                event_status = event_data.get("status", "scheduled")
+                
+                status_icon = "✅" if event_status == "completed" else "⏰"
+                
+                formatted_list += f"     {status_icon} {event_date}: {event_memo}\n"
+                if event_title:
+                    formatted_list += f"        제목: {event_title}\n"
+            
+            if len(events_data) > 5:
+                formatted_list += f"     ... (추가 {len(events_data) - 5}개 이벤트)\n"
+        else:
+            formatted_list += f"   - 이벤트: 없음\n"
+        
+        formatted_list += "\n"
+    
+    formatted_list += f"**총 {len(documents)}개의 스케줄 카테고리가 등록되어 있습니다.**\n"
+    formatted_list += "\n💡 상세 스케줄 관리가 필요하면 스케줄 관리 전용 함수들을 사용해주세요."
+    
+    return formatted_list 
