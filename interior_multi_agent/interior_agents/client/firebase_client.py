@@ -247,7 +247,18 @@ class FirebaseCloudFunctionsClient:
         Returns:
             Dict: 업데이트 결과
         """
+        # document_path에서 collection과 document ID 분리
+        path_parts = document_path.split('/')
+        if len(path_parts) >= 2:
+            collection_path = path_parts[0]
+            document_id = path_parts[1]
+        else:
+            collection_path = document_path
+            document_id = document_path
+            
         data = {
+            "collectionPath": collection_path,
+            "documentId": document_id,
             "documentPath": document_path,
             "data": update_data,
             "merge": merge

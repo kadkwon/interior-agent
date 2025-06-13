@@ -233,35 +233,93 @@ def register_new_address(address_data: dict) -> dict:
         }
 
 
-def update_existing_address(doc_id: str, update_data: dict) -> dict:
+def update_existing_address(identifier: str, update_data: dict) -> dict:
     """
     기존 주소 정보를 수정합니다.
     Firebase MCP 호출 규칙을 적용하여 모든 데이터 작업을 MCP를 통해 처리합니다.
     
     Args:
-        doc_id: 수정할 문서 ID
-        update_data: 수정할 데이터
+        identifier: 수정할 주소 식별자 (doc_id 또는 주소명/description)
+        update_data: 수정할 데이터 (description, dataJson 내 필드들)
         
     Returns:
         dict: 수정 결과
     """
+    print(f"🔥 UPDATE_EXISTING_ADDRESS 호출됨: identifier='{identifier}', update_data={update_data}")
+    
     try:
         # 🚨 0.1 Firebase MCP 호출 의무화 검증
-        if not validate_mcp_call("address_update", "addressesJson", update_data):
+        print(f"🔥 validate_mcp_call 호출 중...")
+        validation_result = validate_mcp_call("address_update", "addressesJson", update_data)
+        print(f"🔥 validate_mcp_call 결과: {validation_result}")
+        
+        if not validation_result:
+            print(f"🔥 MCP 호출 의무화 검증 실패")
             log_operation("address_update", "addressesJson", {"error": "MCP 호출 의무화 검증 실패"}, False)
             return {
                 "status": "error",
                 "message": "데이터 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
             }
 
-        # 1. 문서 존재 여부 확인
-        existing_doc = _get_document_by_id(doc_id)
-        if not existing_doc['exists']:
-            log_operation("address_update", "addressesJson", {"error": "문서 없음", "doc_id": doc_id}, False)
+        # DEBUG: 입력 데이터 로깅
+        log_operation("address_update", "addressesJson", {
+            "debug": "함수 시작",
+            "identifier": identifier, 
+            "update_data": update_data
+        }, True)
+
+        # 1. identifier가 doc_id인지 주소명(description)인지 판단하고 문서 찾기
+        doc_id = None
+        existing_doc = None
+        found_by_address = False
+        
+        # 숫자로만 구성되고 길이가 10자리 이상이면 타임스탬프 doc_id로 먼저 시도
+        if identifier.isdigit() and len(identifier) >= 10:
+            log_operation("address_update", "addressesJson", {"debug": "doc_id 형태로 검색 시도", "identifier": identifier}, True)
+            existing_doc = _get_document_by_id(identifier)
+            if existing_doc['exists']:
+                doc_id = identifier
+                log_operation("address_update", "addressesJson", {"debug": "doc_id로 문서 찾음", "doc_id": doc_id}, True)
+        
+        # doc_id로 찾지 못했거나 doc_id 형태가 아니면 주소명(description)으로 검색
+        if not doc_id:
+            found_by_address = True
+            log_operation("address_update", "addressesJson", {"debug": "주소명으로 검색 시작", "identifier": identifier}, True)
+            
+            # 주소명으로 문서 찾기
+            result = query_any_collection("addressesJson", limit=1000)
+            log_operation("address_update", "addressesJson", {"debug": "컬렉션 조회 결과", "result_status": result.get("status") if result else "None"}, True)
+            
+            if validate_response(result):
+                documents = []
+                try:
+                    if isinstance(result, dict):
+                        if result.get("status") == "success":
+                            documents = result.get("raw_data", {}).get("data", {}).get("documents", [])
+                        elif result.get("success"):
+                            documents = result.get("data", {}).get("documents", [])
+                except Exception as parse_error:
+                    log_operation("address_update", "addressesJson", {"debug": "문서 파싱 오류", "error": str(parse_error)}, False)
+                
+                log_operation("address_update", "addressesJson", {"debug": "문서 수", "count": len(documents)}, True)
+                
+                # 주소명(description)으로 문서 찾기
+                for doc in documents:
+                    doc_description = doc.get("data", {}).get("description", "").strip()
+                    if doc_description == identifier.strip():
+                        doc_id = doc.get("id") or doc.get("_id") or doc.get("name", "").split("/")[-1]
+                        existing_doc = {"exists": True, "data": doc.get("data", {})}
+                        log_operation("address_update", "addressesJson", {"debug": "주소명으로 문서 찾음", "doc_id": doc_id, "description": doc_description}, True)
+                        break
+        
+        if not doc_id or not existing_doc or not existing_doc['exists']:
+            log_operation("address_update", "addressesJson", {"error": "문서 없음", "identifier": identifier, "doc_id": doc_id, "existing_doc_exists": existing_doc['exists'] if existing_doc else None}, False)
             return {
                 "status": "error",
-                "message": f"문서 ID '{doc_id}'를 찾을 수 없습니다."
+                "message": f"주소 '{identifier}'를 찾을 수 없습니다. 정확한 주소명이나 문서 ID를 확인해주세요."
             }
+        
+        log_operation("address_update", "addressesJson", {"debug": "문서 찾기 완료", "doc_id": doc_id}, True)
         
         # 2. 기존 문서의 dataJson 파싱
         existing_doc_data = existing_doc['data']
@@ -271,14 +329,18 @@ def update_existing_address(doc_id: str, update_data: dict) -> dict:
         except json.JSONDecodeError:
             existing_data_json = {}
         
-        # 3. 주소가 변경되는 경우 간단 처리 (검증 생략)
-        if 'address' in update_data:
-            validator = AddressValidator()
-            address_info = validator.extract_address_components(update_data['address'])
-            
-            # 표준화된 주소도 함께 업데이트
-            update_data['standardizedAddress'] = address_info.standardized
-            update_data['confidenceScore'] = address_info.confidence_score
+        # 3. description 필드 처리 (주소 수정)
+        document_updates = {}
+        
+        # update_data에서 description 업데이트 확인
+        if 'description' in update_data:
+            new_description = update_data['description'].strip()
+            if not new_description:
+                return {
+                    "status": "error",
+                    "message": "주소(description)는 빈 값일 수 없습니다."
+                }
+            document_updates['description'] = new_description
         
         # 4. dataJson 업데이트 준비
         updated_data_json = {**existing_data_json}  # 기존 데이터 복사
@@ -289,30 +351,51 @@ def update_existing_address(doc_id: str, update_data: dict) -> dict:
             'startDate': 'contractDate'
         }
         
-        # 업데이트 데이터를 dataJson에 병합
+        # 업데이트 데이터를 dataJson에 병합 (description 제외)
         for key, value in update_data.items():
-            # 매핑된 필드 이름 사용
-            mapped_key = field_mapping.get(key, key)
-            if mapped_key != 'address':  # address는 dataJson에 포함하지 않음
+            if key != 'description':  # description은 문서 최상위 필드
+                # 매핑된 필드 이름 사용
+                mapped_key = field_mapping.get(key, key)
                 updated_data_json[mapped_key] = value
         
         # lastModified 필드 업데이트
         updated_data_json['lastModified'] = datetime.now().isoformat()
         
         # 5. Firebase 업데이트를 위한 문서 데이터 준비
-        document_updates = {
-            "dataJson": json.dumps(updated_data_json, ensure_ascii=False)
-        }
+        document_updates["dataJson"] = json.dumps(updated_data_json, ensure_ascii=False)
         
-        # address가 업데이트되는 경우 description도 업데이트
-        if 'address' in update_data:
-            document_updates['description'] = extract_main_address(update_data['address'])
+        log_operation("address_update", "addressesJson", {
+            "debug": "Firebase 업데이트 준비 완료",
+            "doc_id": doc_id,
+            "document_updates_keys": list(document_updates.keys()),
+            "document_path": f"addressesJson/{doc_id}"
+        }, True)
         
         # 🚨 0.2-2 적절한 Firebase MCP 함수 호출 - 문서 업데이트
         result = firebase_client.update_document(f"addressesJson/{doc_id}", document_updates)
         
+        log_operation("address_update", "addressesJson", {
+            "debug": "Firebase 업데이트 호출 완료",
+            "result_type": type(result).__name__,
+            "result_full": result,
+            "result_success": result.get("success") if result else None,
+            "result_keys": list(result.keys()) if result else None
+        }, True)
+        
         # 🚨 0.2-3 호출 결과 확인 및 검증
         if not validate_response(result):
+            log_operation("address_update", "addressesJson", {
+                "debug": "validate_response 실패",
+                "result": result,
+                "validate_response_check": {
+                    "is_none": result is None,
+                    "is_dict": isinstance(result, dict),
+                    "has_success": "success" in result if isinstance(result, dict) else False,
+                    "success_value": result.get("success") if isinstance(result, dict) else None,
+                    "has_error": "error" in result if isinstance(result, dict) else False,
+                    "error_value": result.get("error") if isinstance(result, dict) else None
+                }
+            }, False)
             error_msg = handle_mcp_error(Exception("Firebase 업데이트 실패"), "address_update")
             return {
                 "status": "error",
@@ -321,11 +404,26 @@ def update_existing_address(doc_id: str, update_data: dict) -> dict:
         
         # 성공적인 응답 처리
         if result and result.get("success"):
-            log_operation("address_update", "addressesJson", {"doc_id": doc_id, "fields_updated": list(update_data.keys())}, True)
+            old_description = existing_doc_data.get('description', identifier)
+            new_description = document_updates.get('description', old_description)
+            
+            log_operation("address_update", "addressesJson", {
+                "doc_id": doc_id, 
+                "identifier": identifier,
+                "found_by": "address" if found_by_address else "doc_id",
+                "fields_updated": list(update_data.keys())
+            }, True)
+            
+            success_msg = f"주소 정보가 성공적으로 업데이트되었습니다."
+            if 'description' in update_data:
+                success_msg += f"\n기존 주소: {old_description}\n새로운 주소: {new_description}"
+            
             return {
-                "status": "success",
-                "message": f"주소 정보가 성공적으로 업데이트되었습니다.",
+                "status": "success", 
+                "message": success_msg,
                 "updated_doc_id": doc_id,
+                "old_description": old_description,
+                "new_description": new_description,
                 "updated_fields": list(update_data.keys())
             }
         else:
@@ -336,17 +434,24 @@ def update_existing_address(doc_id: str, update_data: dict) -> dict:
             }
             
     except Exception as e:
+        print(f"🔥 UPDATE_EXISTING_ADDRESS 예외 발생: {type(e).__name__}: {str(e)}")
+        import traceback
+        print(f"🔥 스택 트레이스:\n{traceback.format_exc()}")
+        
         log_operation("address_update", "addressesJson", {"error": str(e)}, False)
-        return handle_mcp_error("address_update", f"주소 수정 중 오류 발생: {str(e)}")
+        return {
+            "status": "error",
+            "message": handle_mcp_error(e, "address_update")
+        }
 
 
-def delete_address_record(doc_id: str, force: bool = False) -> dict:
+def delete_address_record(identifier: str, force: bool = False) -> dict:
     """
     주소 레코드를 삭제합니다.
     Firebase MCP 호출 규칙을 적용하여 안전한 데이터 제거 방식을 사용합니다.
     
     Args:
-        doc_id: 삭제할 문서 ID
+        identifier: 삭제할 주소 식별자 (doc_id 또는 주소명/description)
         force: 강제 삭제 여부 (완전 문서 삭제인 경우)
         
     Returns:
@@ -361,13 +466,46 @@ def delete_address_record(doc_id: str, force: bool = False) -> dict:
                 "message": "데이터 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
             }
 
-        # 1. 문서 존재 여부 확인
-        existing_doc = _get_document_by_id(doc_id)
-        if not existing_doc['exists']:
-            log_operation("address_delete", "addressesJson", {"error": "문서 없음", "doc_id": doc_id}, False)
+        # 1. identifier가 doc_id인지 주소명(description)인지 판단하고 문서 찾기
+        doc_id = None
+        existing_doc = None
+        found_by_address = False
+        
+        # 숫자로만 구성되고 길이가 10자리 이상이면 타임스탬프 doc_id로 먼저 시도
+        if identifier.isdigit() and len(identifier) >= 10:
+            existing_doc = _get_document_by_id(identifier)
+            if existing_doc['exists']:
+                doc_id = identifier
+        
+        # doc_id로 찾지 못했거나 doc_id 형태가 아니면 주소명(description)으로 검색
+        if not doc_id:
+            found_by_address = True
+            # 주소명으로 문서 찾기
+            result = query_any_collection("addressesJson", limit=1000)
+            if validate_response(result):
+                documents = []
+                try:
+                    if isinstance(result, dict):
+                        if result.get("status") == "success":
+                            documents = result.get("raw_data", {}).get("data", {}).get("documents", [])
+                        elif result.get("success"):
+                            documents = result.get("data", {}).get("documents", [])
+                except Exception:
+                    pass
+                
+                # 주소명(description)으로 문서 찾기
+                for doc in documents:
+                    doc_description = doc.get("data", {}).get("description", "").strip()
+                    if doc_description == identifier.strip():
+                        doc_id = doc.get("id") or doc.get("_id") or doc.get("name", "").split("/")[-1]
+                        existing_doc = {"exists": True, "data": doc.get("data", {})}
+                        break
+        
+        if not doc_id or not existing_doc or not existing_doc['exists']:
+            log_operation("address_delete", "addressesJson", {"error": "문서 없음", "identifier": identifier}, False)
             return {
                 "status": "error",
-                "message": f"문서 ID '{doc_id}'를 찾을 수 없습니다."
+                "message": f"주소 '{identifier}'를 찾을 수 없습니다. 정확한 주소명이나 문서 ID를 확인해주세요."
             }
         
         # 🚨 0.4 데이터 제거 처리 방식 - 안전한 데이터 제거
@@ -408,7 +546,10 @@ def delete_address_record(doc_id: str, force: bool = False) -> dict:
                         "message": error_msg
                     }
             else:
-                return handle_mcp_error("address_delete", f"안전한 데이터 제거 검증 실패: {safe_removal_result.get('error', '알 수 없는 오류')}")
+                return {
+                    "status": "error",
+                    "message": handle_mcp_error(Exception(f"안전한 데이터 제거 검증 실패: {safe_removal_result.get('error', '알 수 없는 오류')}"), "address_delete")
+                }
         
         else:
             # 🚨 완전한 문서 삭제는 사용자가 명시적으로 "문서 삭제"를 요청하는 경우에만 수행
@@ -452,7 +593,10 @@ def delete_address_record(doc_id: str, force: bool = False) -> dict:
             
     except Exception as e:
         log_operation("address_delete", "addressesJson", {"error": str(e)}, False)
-        return handle_mcp_error("address_delete", f"주소 삭제 중 오류 발생: {str(e)}")
+        return {
+            "status": "error", 
+            "message": handle_mcp_error(e, "address_delete")
+        }
 
 
 def list_all_addresses(limit: int = 100, include_details: bool = False) -> dict:
@@ -539,16 +683,46 @@ def list_all_addresses(limit: int = 100, include_details: bool = False) -> dict:
                 })
         
         log_operation("list_addresses", "addressesJson", {"count": len(addresses)}, True)
+        
+        # 사용자가 읽기 쉬운 형태로 포맷팅
+        if addresses:
+            if include_details:
+                # 상세 모드: 모든 정보 표시
+                formatted_list = "📋 **주소 상세 목록**\n\n"
+                for i, addr in enumerate(addresses, 1):
+                    formatted_list += f"{i}. **{addr.get('address', '주소 없음')}**\n"
+                    formatted_list += f"   - 현장번호: {addr.get('siteNumber', '없음')}\n"
+                    formatted_list += f"   - 담당자: {addr.get('supervisorName', '없음')}\n"
+                    formatted_list += f"   - 계약금액: {addr.get('contractAmount', '없음')}\n"
+                    formatted_list += f"   - 계약일: {addr.get('contractDate', '없음')}\n"
+                    formatted_list += f"   - 상태: {'완료' if addr.get('isCompleted') else '진행중'}\n"
+                    formatted_list += f"   - 문서ID: {addr.get('doc_id', '없음')}\n\n"
+            else:
+                # 기본 모드: 주소명만 간단히 표시
+                formatted_list = "📋 **등록된 주소 목록**\n\n"
+                for i, addr in enumerate(addresses, 1):
+                    formatted_list += f"{i}. {addr.get('address', '주소 없음')}\n"
+            
+            formatted_list += f"\n**총 {len(addresses)}개의 주소가 등록되어 있습니다.**"
+            if not include_details:
+                formatted_list += "\n\n💡 상세 정보가 필요하면 '주소 상세 목록 보여줘'라고 요청해주세요."
+        else:
+            formatted_list = "📋 등록된 주소가 없습니다.\n\n새로운 주소를 등록하려면 '주소명 등록해줘' 형태로 요청해주세요."
+        
         return {
             "status": "success",
             "addresses": addresses,
             "total_count": len(addresses),
-            "message": f"총 {len(addresses)}개의 주소를 조회했습니다."
+            "formatted_list": formatted_list,
+            "message": formatted_list  # 사용자에게 직접 표시될 메시지
         }
         
     except Exception as e:
         log_operation("list_addresses", "addressesJson", {"error": str(e)}, False)
-        return handle_mcp_error("list_addresses", f"주소 목록 조회 중 오류 발생: {str(e)}")
+        return {
+            "status": "error",
+            "message": handle_mcp_error(e, "list_addresses")
+        }
 
 
 def search_addresses_by_keyword(keyword: str, threshold: float = 0.6) -> dict:
@@ -639,7 +813,10 @@ def search_addresses_by_keyword(keyword: str, threshold: float = 0.6) -> dict:
         
     except Exception as e:
         log_operation("search_addresses", "addressesJson", {"error": str(e)}, False)
-        return handle_mcp_error("search_addresses", f"주소 검색 중 오류 발생: {str(e)}")
+        return {
+            "status": "error",
+            "message": handle_mcp_error(e, "search_addresses")
+        }
 
 
 # =================
@@ -682,10 +859,21 @@ def _get_document_by_id(doc_id: str) -> dict:
         # addressesJson 컬렉션에서 모든 문서 조회 후 ID로 필터링
         result = query_any_collection("addressesJson", limit=500)
         if result.get("status") == "success":
-            documents = result.get("data", {}).get("documents", [])
+            # 응답 구조에 따라 documents 추출
+            documents = []
+            try:
+                if isinstance(result, dict):
+                    if result.get("status") == "success":
+                        documents = result.get("raw_data", {}).get("data", {}).get("documents", [])
+                    elif result.get("success"):
+                        documents = result.get("data", {}).get("documents", [])
+            except Exception:
+                # 추가 시도: data 직접 접근
+                documents = result.get("data", {}).get("documents", [])
             
             for doc in documents:
-                if doc.get("id") == doc_id:
+                doc_id_check = doc.get("id") or doc.get("_id") or doc.get("name", "").split("/")[-1]
+                if doc_id_check == doc_id:
                     doc_data = doc.get("data", {})
                     # dataJson 파싱
                     data_json_str = doc_data.get("dataJson", "{}")
@@ -696,10 +884,7 @@ def _get_document_by_id(doc_id: str) -> dict:
                     
                     return {
                         "exists": True,
-                        "data": {
-                            **data_json,
-                            "address": doc_data.get("description", "")  # 주소는 description에서
-                        }
+                        "data": doc_data  # 원본 doc_data 반환 (description 포함)
                     }
         
         return {"exists": False}
