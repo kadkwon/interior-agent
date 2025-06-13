@@ -36,11 +36,8 @@ except ImportError as e:
     def validate_response(response): return response is not None
     def log_operation(*args, **kwargs): pass
 
-# 현장관리 및 공사 분할 지급 계획 서비스 import
+# 공사 분할 지급 계획 서비스 import
 from .services import (
-    register_site, 
-    get_site_info, 
-    list_all_sites,
     request_site_address,
     make_payment_plan,
     test_payment_system
@@ -68,14 +65,14 @@ from .agent.address_management_agent import (
 root_agent = LlmAgent(
     model='gemini-2.5-flash-preview-05-20',
     name='interior_manager',
-    description="인테리어 프로젝트 총괄 관리자 - Firebase 연동, 주소 관리, 현장 관리 통합 서비스",
+    description="인테리어 프로젝트 총괄 관리자 - Firebase 연동, 주소 관리, 지급 계획 통합 서비스",
     instruction="""
 인테리어 프로젝트 관리 시스템입니다.
 
 주요 기능:
 1. 주소 관리: 등록, 수정, 삭제, 조회, 검색
 2. Firebase 데이터 관리: 컬렉션 조회, 프로젝트 정보, 스토리지 관리
-3. 현장 관리: 현장 등록, 정보 조회, 지급 계획 관리
+3. 지급 계획 관리: 공사 분할 지급 계획 생성 및 관리
 
 사용자 요청에 따라 적절한 함수를 호출하여 응답합니다.
     """,
@@ -94,10 +91,7 @@ root_agent = LlmAgent(
         list_all_addresses,
         search_addresses_by_keyword,
         
-        # 현장 관리 도구
-        register_site,
-        get_site_info,
-        list_all_sites,
+        # 지급 계획 도구
         request_site_address,
         make_payment_plan,
         test_payment_system
