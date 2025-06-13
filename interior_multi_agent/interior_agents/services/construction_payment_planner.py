@@ -2,7 +2,6 @@ import json
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 import math
-from ..utils.address_validator import AddressValidator, validate_address, standardize_address
 
 def request_site_address() -> str:
     """사용자에게 현장 주소 입력을 요청합니다.
@@ -30,20 +29,6 @@ def search_address_info(address: str, firebase_query_function=None) -> dict:
             except ImportError:
                 from interior_agents.tools.firebase_tools import query_any_collection
             firebase_query_function = query_any_collection
-        
-        # 주소 검증 및 표준화
-        validator = AddressValidator()
-        validation_result = validator.validate_address_format(address)
-        standardized_addr = validator.extract_address_components(address).standardized
-        
-        # 주소 검증 결과 출력
-        if not validation_result['is_valid']:
-            print(f"⚠️ 주소 검증 경고:")
-            for issue in validation_result['issues']:
-                print(f"  - {issue}")
-            for suggestion in validation_result['suggestions']:
-                print(f"  💡 {suggestion}")
-            print(f"📍 표준화된 주소: {standardized_addr}")
         
         # addressesJson 컬렉션 조회
         response = firebase_query_function("addressesJson", limit=100)
@@ -77,12 +62,11 @@ Firebase addressesJson 컬렉션 조회 실패!
             }
         print(f"📊 addressesJson 컬렉션에서 {len(documents)}개 문서를 조회했습니다.")
         
-        # 주소와 매칭되는 문서 찾기 (정확한 매칭 + 유사도 매칭)
+        # 주소와 매칭되는 문서 찾기 (간단한 문자열 매칭)
         matching_doc = None
         all_addresses = []
         
         print(f"🔍 검색 대상 주소: '{address}'")
-        print(f"📍 표준화된 주소: '{standardized_addr}'")
         print(f"📋 데이터베이스의 주소들:")
         
         for i, doc in enumerate(documents, 1):
@@ -94,44 +78,19 @@ Firebase addressesJson 컬렉션 조회 실패!
             if doc_description:
                 print(f"       설명: {doc_description}")
             
-            # 1차: 정확한 부분 매칭 (address와 description 모두 확인)
-            matched = False
+            # 간단한 부분 매칭 (address와 description 모두 확인)
             for field_name, field_value in [("address", doc_address), ("description", doc_description)]:
                 if not field_value:
                     continue
                     
-                if (address.strip() in field_value or field_value in address.strip() or
-                    standardized_addr in field_value or field_value in standardized_addr):
+                if (address.strip().lower() in field_value.lower() or 
+                    field_value.lower() in address.strip().lower()):
                     matching_doc = doc_data
-                    print(f"✅ 정확한 매칭 찾음 ({field_name}): {field_value}")
-                    matched = True
+                    print(f"✅ 매칭 찾음 ({field_name}): {field_value}")
                     break
             
-            if matched:
+            if matching_doc:
                 break
-        
-        # 2차: 유사도 기반 매칭 (정확한 매칭이 없을 경우)
-        if not matching_doc and all_addresses:
-            similar_addresses = validator.find_similar_addresses(
-                address, all_addresses, threshold=0.7
-            )
-            
-            if similar_addresses:
-                best_match, similarity = similar_addresses[0]
-                print(f"📍 유사한 주소 발견 (유사도: {similarity:.2f}): {best_match}")
-                
-                # 유사도가 높은 주소로 다시 검색
-                for doc in documents:
-                    doc_data = doc.get("data", {})
-                    if doc_data.get("address", "") == best_match:
-                        matching_doc = doc_data
-                        break
-                
-                # 다른 유사 주소들도 출력
-                if len(similar_addresses) > 1:
-                    print("🔍 다른 유사 주소들:")
-                    for addr, sim in similar_addresses[1:4]:  # 상위 3개만
-                        print(f"  - {addr} (유사도: {sim:.2f})")
         
         if not matching_doc:
             # 디버깅을 위한 상세 정보 제공
@@ -139,7 +98,6 @@ Firebase addressesJson 컬렉션 조회 실패!
 ❌ 주소 매칭 실패!
 
 🔍 검색한 주소: '{address}'
-📍 표준화된 주소: '{standardized_addr}'
 📊 총 {len(documents)}개 문서 조회됨
 📋 데이터베이스 주소들:
 {chr(10).join([f"   - {addr}" for addr in all_addresses[:5]])}
@@ -147,15 +105,13 @@ Firebase addressesJson 컬렉션 조회 실패!
 
 💡 해결 방안:
 1. 정확한 주소를 입력해주세요
-2. 시/도, 구/군, 동 정보를 포함해주세요
-3. 위 목록에서 유사한 주소를 찾아 다시 시도해주세요
+2. 위 목록에서 유사한 주소를 찾아 다시 시도해주세요
             """
             
             return {
                 "status": "not_found",
                 "message": debug_info.strip(),
-                "available_addresses": all_addresses[:10],  # 최대 10개까지
-                "suggestions": validator.suggest_corrections(address) if validation_result else []
+                "available_addresses": all_addresses[:10]  # 최대 10개까지
             }
         
         return {
@@ -195,9 +151,8 @@ def search_schedule_info(address: str, firebase_query_function=None) -> dict:
                 from interior_agents.tools.firebase_tools import query_any_collection
             firebase_query_function = query_any_collection
         
-        # 주소 검증 및 표준화
-        validator = AddressValidator()
-        standardized_addr = validator.extract_address_components(address).standardized
+        # 간단한 주소 정규화 (공백만 제거)
+        normalized_address = address.strip()
         
         # schedules 컬렉션 조회
         response = firebase_query_function("schedules", limit=100)
@@ -221,10 +176,8 @@ def search_schedule_info(address: str, firebase_query_function=None) -> dict:
             all_addresses.append(doc_address)
             
             # 1차: 정확한 매칭 (문서 ID 또는 address 필드에서)
-            if (address.strip() in doc_address or doc_address in address.strip() or 
-                address.strip() in doc_id or doc_id in address.strip() or
-                standardized_addr in doc_address or doc_address in standardized_addr or
-                standardized_addr in doc_id or doc_id in standardized_addr):
+            if (normalized_address in doc_address or doc_address in normalized_address or 
+                normalized_address in doc_id or doc_id in normalized_address):
                 matching_doc = doc_data
                 print(f"✅ schedules에서 정확한 매칭 찾음: {doc_address}")
                 break
