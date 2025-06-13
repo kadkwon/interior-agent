@@ -148,11 +148,12 @@ def safe_remove_data(collection: str, doc_id: str, data_type: str = "content") -
         elif collection == "addressesJson":
             # addressesJson 컬렉션: 주소 문서는 유지하되 상세 정보만 초기화
             return {
-                "name": "",
-                "address": "",
-                "details": "",
-                "status": "inactive",
-                "updated_at": datetime.now().isoformat()
+                "success": True,
+                "data": {
+                    "dataJson": "{}",
+                    "description": "",
+                    "updated_at": datetime.now().isoformat()
+                }
             }
         
         else:

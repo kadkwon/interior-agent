@@ -508,88 +508,35 @@ def delete_address_record(identifier: str, force: bool = False) -> dict:
                 "message": f"주소 '{identifier}'를 찾을 수 없습니다. 정확한 주소명이나 문서 ID를 확인해주세요."
             }
         
-        # 🚨 0.4 데이터 제거 처리 방식 - 안전한 데이터 제거
-        if not force:
-            # 문서 자체는 삭제하지 않고, 문서 내 데이터만 제거
-            safe_removal_result = safe_remove_data("addressesJson", doc_id, ["dataJson", "description"])
-            
-            if safe_removal_result.get("success"):
-                # 실제 Firebase 업데이트 수행
-                clear_data = {
-                    "dataJson": "{}",
-                    "description": "",
-                    "updated_at": datetime.now().isoformat()
-                }
-                
-                result = firebase_client.update_document(f"addressesJson/{doc_id}", clear_data)
-                
-                if not validate_response(result):
-                    error_msg = handle_mcp_error(Exception("안전한 데이터 제거 실패"), "address_delete")
-                    return {
-                        "status": "error",
-                        "message": error_msg
-                    }
-                
-                # 성공적인 응답 처리
-                if result and result.get("success"):
-                    log_operation("address_delete", "addressesJson", {"doc_id": doc_id, "action": "safe_removal"}, True)
-                    return {
-                        "status": "success",
-                        "message": f"주소 데이터가 안전하게 초기화되었습니다. (문서는 보존됨)",
-                        "doc_id": doc_id,
-                        "action": "safe_removal"
-                    }
-                else:
-                    error_msg = handle_mcp_error(Exception("안전한 데이터 제거 실패"), "address_delete")
-                    return {
-                        "status": "error",
-                        "message": error_msg
-                    }
-            else:
-                return {
-                    "status": "error",
-                    "message": handle_mcp_error(Exception(f"안전한 데이터 제거 검증 실패: {safe_removal_result.get('error', '알 수 없는 오류')}"), "address_delete")
-                }
+        # 🚨 문서 완전 삭제로 변경 - 사용자 요청에 따라
+        # force 파라미터와 관계없이 항상 문서 완전 삭제 수행
         
+        # Firebase에서 문서 완전 삭제
+        document_path = f"addressesJson/{doc_id}"
+        result = firebase_client.delete_document(document_path)
+        
+        if not validate_response(result):
+            error_msg = handle_mcp_error(Exception("Firebase 삭제 실패"), "address_delete")
+            return {
+                "status": "error",
+                "message": error_msg
+            }
+        
+        # 성공적인 응답 처리
+        if result and result.get("success"):
+            log_operation("address_delete", "addressesJson", {"doc_id": doc_id, "action": "complete_deletion"}, True)
+            return {
+                "status": "success",
+                "message": f"주소 '{identifier}'가 완전히 삭제되었습니다.",
+                "deleted_doc_id": doc_id,
+                "deleted_address": existing_doc['data'].get('description', 'Unknown')
+            }
         else:
-            # 🚨 완전한 문서 삭제는 사용자가 명시적으로 "문서 삭제"를 요청하는 경우에만 수행
-            # 2. 관련 데이터 확인 (schedules 컬렉션)
-            related_data = _check_related_data(existing_doc['data'].get('address', ''))
-            if related_data['has_related']:
-                log_operation("address_delete", "addressesJson", {"warning": "관련 데이터 존재", "doc_id": doc_id}, False)
-                return {
-                    "status": "warning",
-                    "message": "이 주소와 관련된 다른 데이터가 있습니다. 정말 삭제하시겠습니까?",
-                    "related_collections": related_data['collections'],
-                    "suggestion": "force=True 옵션을 사용하여 강제 삭제할 수 있습니다."
-                }
-            
-            # 3. Firebase에서 문서 완전 삭제
-            document_path = f"addressesJson/{doc_id}"
-            result = firebase_client.delete_document(document_path)
-            
-            if not validate_response(result):
-                error_msg = handle_mcp_error(Exception("Firebase 삭제 실패"), "address_delete")
-                return {
-                    "status": "error",
-                    "message": error_msg
-                }
-            
-            # 성공적인 응답 처리
-            if result and result.get("success"):
-                log_operation("address_delete", "addressesJson", {"doc_id": doc_id, "action": "complete_deletion"}, True)
-                return {
-                    "status": "success",
-                    "message": f"주소 레코드가 완전히 삭제되었습니다.",
-                    "deleted_doc_id": doc_id,
-                    "deleted_address": existing_doc['data'].get('address', 'Unknown')
-                }
-            else:
-                error_msg = handle_mcp_error(Exception("Firebase 삭제 실패"), "address_delete")
-                return {
-                    "status": "error",
-                    "message": error_msg
-                }
+            error_msg = handle_mcp_error(Exception("Firebase 삭제 실패"), "address_delete")
+            return {
+                "status": "error",
+                "message": error_msg
+            }
             
     except Exception as e:
         log_operation("address_delete", "addressesJson", {"error": str(e)}, False)
