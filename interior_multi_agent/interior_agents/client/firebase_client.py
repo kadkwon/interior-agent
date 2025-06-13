@@ -28,35 +28,88 @@ class FirebaseCloudFunctionsClient:
         """
         url = f"{self.base_url}{endpoint}"
         
+        # 요청 로깅
+        print(f"🔥 Firebase 요청: {method} {url}")
+        if data:
+            print(f"📤 요청 데이터: {json.dumps(data, ensure_ascii=False, indent=2)}")
+        
         try:
             if method.upper() == 'GET':
-                response = self.session.get(url, params=data if data else None)
+                response = self.session.get(url, params=data if data else None, timeout=30)
             elif method.upper() == 'POST':
-                response = self.session.post(url, json=data if data else {})
+                response = self.session.post(url, json=data if data else {}, timeout=30)
             elif method.upper() == 'PUT':
-                response = self.session.put(url, json=data if data else {})
+                response = self.session.put(url, json=data if data else {}, timeout=30)
             elif method.upper() == 'DELETE':
-                response = self.session.delete(url, json=data if data else {})
+                response = self.session.delete(url, json=data if data else {}, timeout=30)
             else:
                 raise ValueError(f"지원하지 않는 HTTP 메소드: {method}")
             
+            # 응답 로깅
+            print(f"📥 응답 상태: {response.status_code}")
+            print(f"📥 응답 헤더: {dict(response.headers)}")
+            
             # HTTP 상태 코드 확인
-            response.raise_for_status()
+            if response.status_code >= 400:
+                error_text = response.text
+                print(f"❌ HTTP 오류: {response.status_code} - {error_text}")
+                return {
+                    "success": False,
+                    "error": f"HTTP {response.status_code}: {error_text}",
+                    "endpoint": endpoint,
+                    "status_code": response.status_code,
+                    "timestamp": datetime.now().isoformat()
+                }
             
             # JSON 응답 파싱
-            return response.json()
+            response_data = response.json()
+            print(f"📥 응답 데이터: {json.dumps(response_data, ensure_ascii=False, indent=2)}")
+            return response_data
             
-        except requests.exceptions.RequestException as e:
+        except requests.exceptions.Timeout as e:
+            error_msg = f"요청 타임아웃: {str(e)}"
+            print(f"⏰ {error_msg}")
             return {
                 "success": False,
-                "error": f"HTTP 요청 실패: {str(e)}",
+                "error": error_msg,
+                "endpoint": endpoint,
+                "timestamp": datetime.now().isoformat()
+            }
+        except requests.exceptions.ConnectionError as e:
+            error_msg = f"연결 오류: {str(e)}"
+            print(f"🔌 {error_msg}")
+            return {
+                "success": False,
+                "error": error_msg,
+                "endpoint": endpoint,
+                "timestamp": datetime.now().isoformat()
+            }
+        except requests.exceptions.RequestException as e:
+            error_msg = f"HTTP 요청 실패: {str(e)}"
+            print(f"🌐 {error_msg}")
+            return {
+                "success": False,
+                "error": error_msg,
                 "endpoint": endpoint,
                 "timestamp": datetime.now().isoformat()
             }
         except json.JSONDecodeError as e:
+            error_msg = f"JSON 파싱 실패: {str(e)}"
+            print(f"📄 {error_msg}")
+            print(f"📄 원본 응답: {response.text if 'response' in locals() else 'N/A'}")
             return {
                 "success": False,
-                "error": f"JSON 파싱 실패: {str(e)}",
+                "error": error_msg,
+                "endpoint": endpoint,
+                "raw_response": response.text if 'response' in locals() else None,
+                "timestamp": datetime.now().isoformat()
+            }
+        except Exception as e:
+            error_msg = f"예상치 못한 오류: {str(e)}"
+            print(f"💥 {error_msg}")
+            return {
+                "success": False,
+                "error": error_msg,
                 "endpoint": endpoint,
                 "timestamp": datetime.now().isoformat()
             }
