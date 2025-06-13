@@ -82,11 +82,17 @@ def query_schedule_collection(limit: int = 50) -> dict:
                 "message": f"schedule 컬렉션에서 {limit}개까지 조회했습니다."
             }
         else:
-            return handle_mcp_error("query_schedule", f"schedule 컬렉션 조회 실패: {validated_response.get('message', '알 수 없는 오류')}")
-        
+            return {
+                "status": "error",
+                "message": handle_mcp_error(Exception(f"schedule 컬렉션 조회 실패: {validated_response.get('message', '알 수 없는 오류')}"), "query_schedule")
+            }
+            
     except Exception as e:
         log_operation("query_schedule", "schedule", {"error": str(e)}, False)
-        return handle_mcp_error("query_schedule", f"schedule 컬렉션 조회 중 오류 발생: {str(e)}")
+        return {
+            "status": "error",
+            "message": handle_mcp_error(e, "query_schedule")
+        }
 
 def get_firebase_project_info() -> dict:
     """
@@ -121,11 +127,11 @@ def get_firebase_project_info() -> dict:
                 "message": f"프로젝트 '{project_data.get('projectId', 'Unknown')}'에 연결되었습니다."
             }
         else:
-            return handle_mcp_error("get_project_info", f"프로젝트 정보 조회 실패: {validated_response.get('message', '알 수 없는 오류')}")
+            return handle_mcp_error(Exception(f"프로젝트 정보 조회 실패: {validated_response.get('message', '알 수 없는 오류')}"), "get_project_info")
             
     except Exception as e:
         log_operation("get_project_info", "project_info", {"error": str(e)}, False)
-        return handle_mcp_error("get_project_info", f"Firebase 프로젝트 정보 조회 중 오류: {str(e)}")
+        return handle_mcp_error(e, "get_project_info")
 
 def list_firestore_collections() -> dict:
     """
@@ -166,11 +172,11 @@ def list_firestore_collections() -> dict:
                 "message": f"총 {len(collections)}개의 컬렉션이 있습니다."
             }
         else:
-            return handle_mcp_error("list_collections", f"컬렉션 목록 조회 실패: {validated_response.get('message', '알 수 없는 오류')}")
+            return handle_mcp_error(Exception(f"컬렉션 목록 조회 실패: {validated_response.get('message', '알 수 없는 오류')}"), "list_collections")
             
     except Exception as e:
         log_operation("list_collections", "firestore", {"error": str(e)}, False)
-        return handle_mcp_error("list_collections", f"컬렉션 목록 조회 중 오류: {str(e)}")
+        return handle_mcp_error(e, "list_collections")
 
 def query_any_collection(collection_name: str, limit: int = 10) -> dict:
     """
@@ -285,8 +291,8 @@ def list_storage_files(prefix: str = "") -> dict:
                 "message": f"'{prefix}' 경로에서 {len(files)}개의 파일을 조회했습니다."
             }
         else:
-            return handle_mcp_error("list_storage", f"Storage 파일 목록 조회 실패: {validated_response.get('message', '알 수 없는 오류')}")
+            return handle_mcp_error(Exception(f"Storage 파일 목록 조회 실패: {validated_response.get('message', '알 수 없는 오류')}"), "list_storage")
             
     except Exception as e:
         log_operation("list_storage", "storage", {"error": str(e), "prefix": prefix}, False)
-        return handle_mcp_error("list_storage", f"Firebase Storage 파일 목록 조회 중 오류: {str(e)}") 
+        return handle_mcp_error(e, "list_storage") 
