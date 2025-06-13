@@ -55,13 +55,6 @@ from .tools import (
     list_storage_files
 )
 
-# 주소 검증 도구 import
-from .utils import (
-    validate_and_standardize_address,
-    find_similar_addresses_from_list,
-    suggest_address_corrections
-)
-
 # 주소 관리 에이전트 import  
 from .agent.address_management_agent import (
     register_new_address,
@@ -87,24 +80,21 @@ root_agent = LlmAgent(
 사용자 요청에 따라 적절한 함수를 호출하여 응답합니다.
     """,
     tools=[
-        # 🔥 Firebase 도구
+        # Firebase 도구
         query_schedule_collection,
         get_firebase_project_info,
         list_firestore_collections,
         query_any_collection,
         list_storage_files,
         
-        # 🏠 주소 관리 도구
+        # 주소 관리 도구
         register_new_address,
         update_existing_address,
         delete_address_record,
         list_all_addresses,
         search_addresses_by_keyword,
-        validate_and_standardize_address,
-        find_similar_addresses_from_list,
-        suggest_address_corrections,
         
-        # 🏗️ 현장 관리 도구
+        # 현장 관리 도구
         register_site,
         get_site_info,
         list_all_sites,

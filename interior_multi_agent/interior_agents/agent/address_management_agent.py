@@ -36,12 +36,10 @@ except ImportError:
 try:
     from ..client.firebase_client import firebase_client
     from ..tools.firebase_tools import query_any_collection
-    from ..utils.address_validator import AddressValidator
 except ImportError:
     # ADK Web 환경에서는 절대 import
     from interior_agents.client.firebase_client import firebase_client
     from interior_agents.tools.firebase_tools import query_any_collection
-    from interior_agents.utils.address_validator import AddressValidator
 
 
 
@@ -657,36 +655,6 @@ def search_addresses_by_keyword(keyword: str, threshold: float = 0.6) -> dict:
 # =================
 # 헬퍼 함수들
 # =================
-
-def _check_duplicate_address(address: str, threshold: float = 0.8) -> dict:
-    """중복 주소 체크"""
-    try:
-        all_addresses_result = list_all_addresses(limit=200)
-        if all_addresses_result.get("status") != "success":
-            return {"has_duplicate": False}
-        
-        validator = AddressValidator()
-        existing_addresses = [addr["address"] for addr in all_addresses_result.get("addresses", []) if addr.get("address")]
-        
-        similar_addresses = validator.find_similar_addresses(address, existing_addresses, threshold)
-        
-        if similar_addresses:
-            best_match, similarity = similar_addresses[0]
-            # 문서 ID 찾기
-            for addr in all_addresses_result.get("addresses", []):
-                if addr["address"] == best_match:
-                    return {
-                        "has_duplicate": True,
-                        "similar_address": best_match,
-                        "similarity": similarity,
-                        "doc_id": addr["doc_id"]
-                    }
-        
-        return {"has_duplicate": False}
-        
-    except Exception:
-        return {"has_duplicate": False}
-
 
 def _get_document_by_id(doc_id: str) -> dict:
     """문서 ID로 특정 문서 조회"""
