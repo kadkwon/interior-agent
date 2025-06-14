@@ -511,37 +511,50 @@ def list_all_addresses(limit: int = 100, include_details: bool = False) -> dict:
                     "createdAt": data_json.get("createdAt", "")
                 })
             else:
-                # 기본 정보만
+                # 기본 정보만 - 주소명만 포함
                 addresses.append({
                     "doc_id": doc_id,
-                    "address": doc_data.get("description", ""),  # 주소는 description에서
-                    "contractAmount": data_json.get("contractAmount", ""),
-                    "supervisorName": data_json.get("supervisorName", "")
+                    "address": doc_data.get("description", "")  # 주소는 description에서
                 })
         
         log_operation("list_addresses", "addressesJson", {"count": len(addresses)}, True)
         
         # 사용자가 읽기 쉬운 형태로 포맷팅
         if addresses:
-            if include_details:
-                # 상세 모드: 모든 정보 표시
-                formatted_list = "📋 **주소 상세 목록**\n\n"
-                for i, addr in enumerate(addresses, 1):
-                    formatted_list += f"{i}. **{addr.get('address', '주소 없음')}**\n"
-                    formatted_list += f"   - 담당자: {addr.get('supervisorName', '없음')}\n"
-                    formatted_list += f"   - 계약금액: {addr.get('contractAmount', '없음')}\n"
-                    formatted_list += f"   - 계약일: {addr.get('contractDate', '없음')}\n"
-                    formatted_list += f"   - 상태: {'완료' if addr.get('isCompleted') else '진행중'}\n"
-                    formatted_list += f"   - 문서ID: {addr.get('doc_id', '없음')}\n\n"
-            else:
-                # 기본 모드: 주소명만 간단히 표시
-                formatted_list = "📋 **등록된 주소 목록**\n\n"
-                for i, addr in enumerate(addresses, 1):
-                    formatted_list += f"{i}. {addr.get('address', '주소 없음')}\n"
+            # 유효한 주소만 필터링 (잘못 등록된 데이터 제외)
+            valid_addresses = []
+            for addr in addresses:
+                address_text = addr.get('address', '').strip()
+                # 명령어나 요청 형태의 잘못된 데이터 제외
+                if (address_text and 
+                    not any(keyword in address_text.lower() for keyword in 
+                           ['보여주세요', '등록해줘', '일정', '확인하고', '를 등록', '설정해주세요', '변경해주세요']) and
+                    len(address_text) > 3 and  # 너무 짧은 주소 제외
+                    not address_text in ['새 주소', '11114']):  # 테스트용 데이터 제외
+                    valid_addresses.append(addr)
             
-            formatted_list += f"\n**총 {len(addresses)}개의 주소가 등록되어 있습니다.**"
-            if not include_details:
-                formatted_list += "\n\n💡 상세 정보가 필요하면 '주소 상세 목록 보여줘'라고 요청해주세요."
+            if valid_addresses:
+                if include_details:
+                    # 상세 모드: 모든 정보 표시
+                    formatted_list = "📋 등록된 주소 상세 목록\n\n"
+                    for i, addr in enumerate(valid_addresses, 1):
+                        formatted_list += f"{i}. {addr.get('address', '주소 없음')}\n"
+                        formatted_list += f"   - 담당자: {addr.get('supervisorName', '없음')}\n"
+                        formatted_list += f"   - 계약금액: {addr.get('contractAmount', '없음')}\n"
+                        formatted_list += f"   - 계약일: {addr.get('contractDate', '없음')}\n"
+                        formatted_list += f"   - 상태: {'완료' if addr.get('isCompleted') else '진행중'}\n"
+                        formatted_list += f"   - 문서ID: {addr.get('doc_id', '없음')}\n\n"
+                else:
+                    # 기본 모드: 주소명만 간단히 표시
+                    formatted_list = "📋 등록된 주소 목록\n\n"
+                    for i, addr in enumerate(valid_addresses, 1):
+                        formatted_list += f"{i}. {addr.get('address', '주소 없음')}\n"
+                
+                formatted_list += f"\n총 {len(valid_addresses)}개의 주소가 등록되어 있습니다."
+                if not include_details:
+                    formatted_list += "\n\n💡 상세 정보가 필요하면 '주소 상세 목록 보여줘'라고 요청해주세요."
+            else:
+                formatted_list = "📋 유효한 주소가 없습니다.\n\n새로운 주소를 등록하려면 '주소명 등록해줘' 형태로 요청해주세요."
         else:
             formatted_list = "📋 등록된 주소가 없습니다.\n\n새로운 주소를 등록하려면 '주소명 등록해줘' 형태로 요청해주세요."
         
