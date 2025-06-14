@@ -322,3 +322,202 @@ graph TD
 특히 **Firebase 연동 기능**으로 온라인 데이터베이스와 실시간 동기화가 가능해서 여러 사람이 함께 사용할 수 있어요!
 
 궁금한 점이 있으면 언제든 물어보세요! 🚀 
+
+## 🚀 **NEW: Vertex AI Agent Engine 배포**
+
+이제 **클라우드에서 완전 관리형 AI 에이전트**로 배포할 수 있습니다!
+
+### 배포 방법
+
+#### 1단계: 환경 설정 (자동)
+```bash
+# 모든 환경을 자동으로 설정
+python setup_deployment.py
+```
+
+#### 2단계: 배포 실행
+```bash
+# 개발 환경 배포
+python deploy.py --environment development
+
+# 프로덕션 환경 배포 (아시아 지역)
+python deploy.py --environment production --region asia-northeast1
+```
+
+#### 3단계: 배포 테스트
+```bash
+# 빠른 테스트
+python quick_test.py
+
+# 상세 테스트
+python test_deployment.py
+```
+
+### 배포 특징
+- ✅ **완전 관리형**: 인프라 관리 불필요
+- 🔒 **보안**: Google Cloud 보안 기준 준수
+- 📈 **자동 확장**: 사용량에 따른 자동 스케일링
+- 📊 **모니터링**: Cloud Trace, Cloud Logging 통합
+
+### 배포 아키텍처
+
+```
+🏠 인테리어 에이전트
+├── 📦 Google ADK 기반
+├── 🔥 Firebase 실시간 연동
+├── ☁️ Vertex AI Agent Engine
+├── 🗄️ Cloud Storage 스테이징
+└── 📊 Cloud Monitoring
+```
+
+## 📋 기존 로컬 설정
+
+### 사전 요구사항
+- Python 3.9+
+- Google AI Studio API 키 또는 Vertex AI 접근 권한
+- Firebase 프로젝트 설정
+
+### 설치 및 실행
+
+1. **저장소 클론**
+```bash
+git clone [repository-url]
+cd interior_multi_agent
+```
+
+2. **가상환경 설정**
+```bash
+python -m venv .venv
+source .venv/bin/activate  # Linux/Mac
+# 또는
+.venv\Scripts\activate     # Windows
+```
+
+3. **의존성 설치**
+```bash
+pip install -r requirements.txt
+```
+
+4. **환경설정**
+```bash
+# 설정 템플릿 복사
+cp interior_agents/config_template.txt .env
+
+# .env 파일을 편집하여 실제 API 키 입력
+# GOOGLE_API_KEY=your_actual_api_key_here
+```
+
+5. **실행**
+```bash
+cd interior_agents
+python main.py
+```
+
+## 🏗️ 프로젝트 구조
+
+```
+interior_multi_agent/
+├── 📁 interior_agents/              # 🎯 메인 에이전트 패키지
+│   ├── 📄 __init__.py              # root_agent export
+│   ├── 🤖 agent_main.py           # 메인 통합 에이전트
+│   ├── 🔥 firebase_mcp_rules.py   # Firebase MCP 규칙
+│   ├── 📁 services/                # 🛠️ 비즈니스 서비스
+│   ├── 📁 tools/                   # 🔧 도구 모듈들
+│   ├── 📁 client/                  # 📡 클라이언트 연결
+│   ├── 📁 utils/                   # 🧰 유틸리티 함수들
+│   └── 📁 config/                  # ⚙️ 배포 설정 (NEW)
+├── 📄 requirements.txt             # 의존성 패키지
+├── 📄 deployment_requirements.txt  # 배포용 패키지 (NEW)
+├── 📄 deployment.env.template      # 배포 환경설정 (NEW)
+├── 🚀 deploy.py                   # 배포 스크립트 (NEW)
+├── 🔧 setup_deployment.py         # 환경 설정 (NEW)
+├── 🧪 quick_test.py               # 빠른 테스트 (NEW)
+├── 📚 DEPLOYMENT_GUIDE.md          # 배포 가이드 (NEW)
+└── 📋 README.md                   # 프로젝트 설명
+```
+
+## 🔧 기능 상세
+
+### 1. 현장 관리 시스템
+- **현장 등록**: 주소, 평수, 시공 유형 등 기본 정보 입력
+- **현장 조회**: 등록된 모든 현장 정보 실시간 조회
+- **현장 수정**: 기존 현장 정보 업데이트
+
+### 2. 지급 계획 관리
+- **자동 계산**: 평수와 시공 유형에 따른 자동 견적
+- **단계별 지급**: 계약금, 중도금, 잔금 등 단계별 관리
+- **지급 추적**: 각 단계별 지급 현황 실시간 추적
+
+### 3. Firebase 실시간 연동
+- **Firestore**: 구조화된 데이터 저장 및 조회
+- **Storage**: 현장 사진, 도면 등 파일 관리
+- **실시간 동기화**: 데이터 변경사항 즉시 반영
+
+## 📊 사용 예시
+
+### 현장 등록
+```
+사용자: "서울시 강남구 테헤란로 123번지, 30평 아파트 전체 리모델링 현장을 등록해주세요"
+
+에이전트: "네, 새로운 현장을 등록하겠습니다.
+- 주소: 서울시 강남구 테헤란로 123번지
+- 면적: 30평 (99.2㎡)
+- 시공유형: 전체 리모델링
+- 예상 공사비: 1억 2천만원
+Firebase에 성공적으로 저장되었습니다."
+```
+
+### 지급 계획 수립
+```
+사용자: "위 현장의 지급 계획을 세워주세요"
+
+에이전트: "30평 전체 리모델링 지급 계획을 수립했습니다:
+📋 총 공사비: 120,000,000원
+💰 계약금 (10%): 12,000,000원 - 계약 시
+💰 중도금1 (30%): 36,000,000원 - 철거/전기 완료 시  
+💰 중도금2 (30%): 36,000,000원 - 타일/도배 완료 시
+💰 잔금 (30%): 36,000,000원 - 준공 시"
+```
+
+## 🌐 배포 환경 비교
+
+| 항목 | 로컬 개발 | Agent Engine 배포 |
+|------|-----------|-------------------|
+| **인프라 관리** | 개발자 직접 관리 | Google Cloud 완전 관리 |
+| **확장성** | 수동 스케일링 | 자동 스케일링 |
+| **보안** | 로컬 보안 설정 | 클라우드 보안 기준 |
+| **모니터링** | 수동 로깅 | Cloud Monitoring 통합 |
+| **비용** | 개발 비용만 | 사용량 기반 과금 |
+| **접근성** | 로컬 네트워크만 | 글로벌 접근 가능 |
+
+## 📚 추가 문서
+
+- **[배포 가이드](DEPLOYMENT_GUIDE.md)**: Vertex AI Agent Engine 배포 상세 가이드
+- **[기술 사양서](기술_사양서.md)**: 시스템 아키텍처 및 기술 스택
+- **[프로젝트 현황](프로젝트_현황_요약.md)**: 개발 진행 상황
+
+## 🔗 관련 링크
+
+- **Vertex AI Agent Engine**: https://cloud.google.com/vertex-ai/docs/agent-engine
+- **Google ADK**: https://google.github.io/adk-docs/
+- **Firebase**: https://firebase.google.com/
+
+## 🆘 지원 및 문제 해결
+
+### 일반적인 문제
+1. **API 키 오류**: `.env` 파일의 API 키 확인
+2. **Firebase 연결 실패**: Firebase 프로젝트 설정 확인
+3. **패키지 설치 오류**: Python 버전 및 가상환경 확인
+
+### 배포 관련 문제
+1. **권한 오류**: Google Cloud 프로젝트 권한 확인
+2. **API 비활성화**: 필수 API 활성화 확인
+3. **버킷 생성 실패**: Cloud Storage 권한 확인
+
+### 지원 요청
+- 📧 이메일: support@your-domain.com
+- 🐛 GitHub Issues: [Repository Issues](https://github.com/your-repo/issues)
+
+---
+
+**🎉 이제 로컬 개발부터 클라우드 배포까지 완벽하게 지원합니다!** 
