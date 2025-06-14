@@ -1,7 +1,39 @@
 import json
 import datetime
+import sys
+import os
+import requests
 from typing import List, Dict, Any
-from tools import get_available_tools, execute_tool
+
+# 1순위: ADK API 클라이언트 시도
+try:
+    from adk_api_client import adk_interior_agent
+    ADK_API_AVAILABLE = True
+    print("✅ ADK API 클라이언트 연동 성공")
+except ImportError as e:
+    print(f"⚠️ ADK API 클라이언트 연동 실패: {e}")
+    ADK_API_AVAILABLE = False
+    adk_interior_agent = None
+
+# 2순위: 실제 에이전트 연동 시도 (기존 real_agent_integration)
+try:
+    from real_agent_integration import real_interior_agent
+    REAL_AGENT_AVAILABLE = True
+    print("✅ 실제 Agent 연동 성공")
+except ImportError as e:
+    print(f"⚠️ 실제 Agent 연동 실패: {e}")
+    REAL_AGENT_AVAILABLE = False
+    real_interior_agent = None
+
+# 3순위: 안정적인 fallback 에이전트 임포트
+try:
+    from fallback_agent import interior_agent
+    FALLBACK_AGENT_AVAILABLE = True
+    print("✅ Fallback Agent 로드 성공")
+except ImportError as e:
+    print(f"❌ Fallback Agent 임포트 실패: {e}")
+    FALLBACK_AGENT_AVAILABLE = False
+    interior_agent = None
 
 class ChatManager:
     def __init__(self):
@@ -9,197 +41,244 @@ class ChatManager:
         self.context_summary = ""
         self.max_history_length = 20
     
-    def add_message(self, role: str, content: str, tool_calls: List[Dict] = None, tool_results: List[Dict] = None):
-        """대화 기록에 메시지를 추가합니다."""
-        message = {
-            "role": role,
-            "content": content,
-            "timestamp": datetime.datetime.now().isoformat(),
-            "tool_calls": tool_calls or [],
-            "tool_results": tool_results or []
-        }
-        
-        self.conversation_history.append(message)
-        
-        # 대화 기록이 너무 길어지면 요약
-        if len(self.conversation_history) > self.max_history_length:
-            self._summarize_old_messages()
-    
-    def _summarize_old_messages(self):
-        """오래된 메시지들을 요약합니다."""
-        # 앞의 10개 메시지를 요약하고 제거
-        old_messages = self.conversation_history[:10]
-        self.conversation_history = self.conversation_history[10:]
-        
-        # 간단한 요약 생성
-        summary_points = []
-        for msg in old_messages:
-            if msg["role"] == "user":
-                summary_points.append(f"사용자: {msg['content'][:50]}...")
-            elif msg["role"] == "assistant":
-                summary_points.append(f"AI: {msg['content'][:50]}...")
-        
-        self.context_summary = " | ".join(summary_points)
-    
-    def get_context_for_ai(self) -> str:
-        """AI에게 전달할 컨텍스트를 생성합니다."""
-        context = ""
-        
-        if self.context_summary:
-            context += f"이전 대화 요약: {self.context_summary}\n\n"
-        
-        context += "최근 대화:\n"
-        for msg in self.conversation_history[-5:]:  # 최근 5개 메시지만
-            role_kr = "사용자" if msg["role"] == "user" else "AI"
-            context += f"{role_kr}: {msg['content']}\n"
-            
-            if msg.get("tool_calls"):
-                context += f"도구 사용: {[tool['name'] for tool in msg['tool_calls']]}\n"
-        
-        return context
-    
-    def process_user_message(self, user_input: str) -> Dict[str, Any]:
-        """사용자 메시지를 처리하고 AI 응답을 생성합니다."""
-        # 사용자 메시지 추가
-        self.add_message("user", user_input)
-        
-        # 도구 사용이 필요한지 판단
-        tool_calls, tool_results = self._check_and_execute_tools(user_input)
-        
-        # AI 응답 생성
-        ai_response = self._generate_ai_response(user_input, tool_calls, tool_results)
-        
-        # AI 응답 추가
-        self.add_message("assistant", ai_response, tool_calls, tool_results)
-        
-        return {
-            "response": ai_response,
-            "tool_calls": tool_calls,
-            "tool_results": tool_results
-        }
-    
-    def _check_and_execute_tools(self, user_input: str) -> tuple:
-        """사용자 입력에서 도구 사용이 필요한지 확인하고 실행합니다."""
-        tool_calls = []
-        tool_results = []
-        
-        user_lower = user_input.lower()
-        
-        # 계산 요청 감지
-        if any(word in user_lower for word in ['계산', '더하기', '빼기', '곱하기', '나누기', '+', '-', '*', '/']):
-            # 수식 추출 시도
-            import re
-            math_pattern = r'[\d+\-*/().\s]+'
-            matches = re.findall(math_pattern, user_input)
-            if matches:
-                expression = max(matches, key=len).strip()
-                if len(expression) > 1:
-                    tool_calls.append({
-                        "name": "calculator",
-                        "parameters": {"expression": expression}
-                    })
-                    result = execute_tool("calculator", {"expression": expression})
-                    tool_results.append(result)
-        
-        # 시간 요청 감지
-        if any(word in user_lower for word in ['시간', '몇시', '지금', '현재']):
-            tool_calls.append({
-                "name": "get_current_time",
-                "parameters": {}
-            })
-            result = execute_tool("get_current_time", {})
-            tool_results.append(result)
-        
-        # 날씨 요청 감지
-        if any(word in user_lower for word in ['날씨', '기온', '온도']):
-            # 도시명 추출 시도
-            cities = ['서울', 'seoul', '부산', 'busan', '제주', 'jeju']
-            city = 'Seoul'  # 기본값
-            for c in cities:
-                if c in user_lower:
-                    if c in ['서울', 'seoul']:
-                        city = 'Seoul'
-                    elif c in ['부산', 'busan']:
-                        city = 'Busan'
-                    elif c in ['제주', 'jeju']:
-                        city = 'Jeju'
-                    break
-            
-            tool_calls.append({
-                "name": "weather_info",
-                "parameters": {"city": city}
-            })
-            result = execute_tool("weather_info", {"city": city})
-            tool_results.append(result)
-        
-        return tool_calls, tool_results
-    
-    def _generate_ai_response(self, user_input: str, tool_calls: List[Dict], tool_results: List[Dict]) -> str:
-        """AI 응답을 생성합니다."""
-        # 도구 실행 결과가 있으면 그것을 포함해서 응답
-        if tool_results:
-            response_parts = []
-            
-            for i, (tool_call, result) in enumerate(zip(tool_calls, tool_results)):
-                tool_name = tool_call["name"]
-                
-                if tool_name == "calculator" and result["success"]:
-                    response_parts.append(f"계산 결과: {result['expression']} = {result['result']}")
-                
-                elif tool_name == "get_current_time" and result["success"]:
-                    response_parts.append(f"현재 시간: {result['current_time']}")
-                
-                elif tool_name == "weather_info" and result["success"]:
-                    weather = result["weather"]
-                    response_parts.append(
-                        f"{result['city']} 날씨: {weather['condition']}, "
-                        f"기온 {weather['temp']}, 습도 {weather['humidity']}"
-                    )
-                
-                elif not result["success"]:
-                    response_parts.append(f"오류가 발생했습니다: {result['error']}")
-            
-            if response_parts:
-                base_response = " | ".join(response_parts)
-                return f"{base_response}\n\n다른 궁금한 것이 있으시면 언제든 말씀해주세요!"
-        
-        # 일반적인 대화 응답
-        context = self.get_context_for_ai()
-        
-        # 간단한 응답 생성 로직
-        user_lower = user_input.lower()
-        
-        if any(word in user_lower for word in ['안녕', '하이', '헬로']):
-            return "안녕하세요! 저는 맥락을 기억하는 AI 챗봇입니다. 계산, 시간 조회, 날씨 정보 등을 도와드릴 수 있어요. 무엇을 도와드릴까요?"
-        
-        elif any(word in user_lower for word in ['도움', '뭐할수있어', '기능']):
-            tools = get_available_tools()
-            tool_descriptions = [f"• {tool['name']}: {tool['description']}" for tool in tools]
-            return f"제가 도와드릴 수 있는 것들:\n" + "\n".join(tool_descriptions) + "\n\n무엇을 도와드릴까요?"
-        
-        elif '?' in user_input or '궁금' in user_lower:
-            return "좋은 질문이네요! 계산이나 시간, 날씨 관련 질문이라면 정확한 정보를 제공해드릴 수 있습니다. 구체적으로 무엇이 궁금하신가요?"
-        
+        # 에이전트 우선순위에 따른 선택
+        if ADK_API_AVAILABLE and adk_interior_agent and adk_interior_agent.available:
+            self.agent = adk_interior_agent
+            self.agent_type = "ADK_API"
+            print("🚀 ADK API 에이전트 선택됨")
+        elif REAL_AGENT_AVAILABLE and real_interior_agent:
+            self.agent = real_interior_agent
+            self.agent_type = "REAL_AGENT"
+            print("🔧 실제 에이전트 선택됨")
+        elif FALLBACK_AGENT_AVAILABLE and interior_agent:
+            self.agent = interior_agent
+            self.agent_type = "FALLBACK"
+            print("🛡️ Fallback 에이전트 선택됨")
         else:
-            return f"말씀하신 '{user_input}'에 대해 생각해보니, 더 구체적인 정보가 있으면 좋겠어요. 계산이나 시간, 날씨 같은 정보가 필요하시면 언제든 말씀해주세요!"
+            self.agent = None
+            self.agent_type = "NONE"
+            print("❌ 사용 가능한 에이전트가 없습니다")
+        
+        # 에이전트 정보 출력
+        if self.agent:
+            print(f"✅ 에이전트 연결 성공: {self.agent_type}")
+            print(f"   - 이름: {getattr(self.agent, 'name', 'Unknown')}")
+            print(f"   - 설명: {getattr(self.agent, 'description', 'No description')}")
+    
+    def get_response(self, user_input: str) -> str:
+        """사용자 입력에 대한 응답 생성"""
+        if not self.agent:
+            return "죄송합니다. 현재 시스템을 사용할 수 없습니다. 잠시 후 다시 시도해주세요."
+        
+        try:
+            # 에이전트 타입에 따른 처리
+            if self.agent_type == "ADK_API":
+                response = self._get_adk_response(user_input)
+            elif self.agent_type == "REAL_AGENT":
+                response = self._get_real_agent_response(user_input)
+            elif self.agent_type == "FALLBACK":
+                response = self._get_fallback_response(user_input)
+            else:
+                response = "에이전트를 사용할 수 없습니다."
+            
+            # 대화 기록 추가
+            self._add_to_history(user_input, response)
+            
+            return response
+            
+        except Exception as e:
+            error_msg = f"응답 생성 중 오류가 발생했습니다: {str(e)}"
+            print(f"❌ ChatManager 오류: {error_msg}")
+            
+            # 에러 발생 시 fallback 시도
+            if self.agent_type != "FALLBACK" and FALLBACK_AGENT_AVAILABLE:
+                try:
+                    print("🔄 Fallback 에이전트로 재시도...")
+                    fallback_response = interior_agent.generate(user_input)
+                    self._add_to_history(user_input, fallback_response)
+                    return fallback_response
+                except Exception as fallback_e:
+                    print(f"❌ Fallback도 실패: {fallback_e}")
+            
+            return error_msg
+    
+    def _get_adk_response(self, user_input: str) -> str:
+        """ADK API를 통한 응답"""
+        try:
+            response = adk_interior_agent.generate(user_input)
+            print(f"✅ ADK API 응답 성공: {len(response)} 문자")
+            return response
+        except Exception as e:
+            print(f"❌ ADK API 오류: {e}")
+            raise e
+    
+    def _get_real_agent_response(self, user_input: str) -> str:
+        """실제 에이전트를 통한 응답"""
+        try:
+            response = real_interior_agent.generate(user_input)
+            print(f"✅ 실제 에이전트 응답 성공: {len(response)} 문자")
+            return response
+        except Exception as e:
+            print(f"❌ 실제 에이전트 오류: {e}")
+            raise e
+    
+    def _get_fallback_response(self, user_input: str) -> str:
+        """Fallback 에이전트를 통한 응답"""
+        try:
+            is_interior_question = interior_agent.is_interior_related(user_input)
+            response = interior_agent.generate(user_input)
+            print(f"✅ Fallback 응답 성공: {len(response)} 문자, 인테리어관련: {is_interior_question}")
+            return response
+        except Exception as e:
+            print(f"❌ Fallback 에이전트 오류: {e}")
+            raise e
+    
+    def _add_to_history(self, user_input: str, response: str):
+        """대화 기록에 추가"""
+        try:
+            self.conversation_history.append({
+                "timestamp": datetime.datetime.now().isoformat(),
+                "user_input": user_input,
+                "response": response,
+                "agent_type": self.agent_type
+            })
+            
+            # 최대 길이 초과 시 가장 오래된 기록 제거
+            if len(self.conversation_history) > self.max_history_length:
+                self.conversation_history.pop(0)
+                
+        except Exception as e:
+            print(f"⚠️ 대화 기록 추가 실패: {e}")
+    
+    def get_conversation_context(self) -> str:
+        """대화 맥락 요약 반환"""
+        if not self.conversation_history:
+            return "대화 기록이 없습니다."
+        
+        try:
+            recent_conversations = self.conversation_history[-5:]  # 최근 5개 대화
+            context_parts = []
+            
+            for conv in recent_conversations:
+                context_parts.append(f"사용자: {conv['user_input'][:50]}...")
+                context_parts.append(f"응답: {conv['response'][:50]}...")
+            
+            return "\n".join(context_parts)
+            
+        except Exception as e:
+            return f"대화 맥락 생성 중 오류: {str(e)}"
     
     def clear_history(self):
-        """대화 기록을 초기화합니다."""
+        """대화 기록 초기화"""
         self.conversation_history = []
         self.context_summary = ""
+        print("✅ 대화 기록이 초기화되었습니다.")
     
-    def get_conversation_display(self) -> List[Dict[str, Any]]:
-        """화면에 표시할 대화 기록을 반환합니다."""
-        display_messages = []
-        
-        for msg in self.conversation_history:
-            display_msg = {
-                "role": msg["role"],
-                "content": msg["content"],
-                "timestamp": msg["timestamp"],
-                "tool_calls": msg.get("tool_calls", []),
-                "tool_results": msg.get("tool_results", [])
+    def check_adk_api_connection(self, test_chat=False) -> Dict[str, Any]:
+        """ADK API 서버 연결 상태 실시간 확인"""
+        try:
+            # 1단계: Health Check
+            response = requests.get("http://localhost:8505/health", timeout=3)
+            if response.status_code != 200:
+                return {
+                    "connected": False,
+                    "status": "error",
+                    "agent_available": False,
+                    "timestamp": "",
+                    "error": f"HTTP {response.status_code}",
+                    "chat_test": False
+                }
+            
+            data = response.json()
+            health_ok = data.get("agent_available", False)
+            
+            # 2단계: 실제 채팅 테스트 (옵션)
+            chat_test_result = False
+            chat_error = None
+            
+            if test_chat and health_ok:
+                try:
+                    chat_response = requests.post(
+                        "http://localhost:8505/agent/chat",
+                        json={"message": "연결 테스트"},
+                        timeout=10
+                    )
+                    
+                    if chat_response.status_code == 200:
+                        chat_data = chat_response.json()
+                        chat_test_result = chat_data.get("success", False)
+                        if not chat_test_result:
+                            chat_error = chat_data.get("error", "채팅 테스트 실패")
+                    else:
+                        chat_error = f"채팅 HTTP {chat_response.status_code}"
+                        
+                except Exception as e:
+                    chat_error = f"채팅 테스트 오류: {str(e)}"
+            
+            # 최종 상태 결정
+            if health_ok and (not test_chat or chat_test_result):
+                return {
+                    "connected": True,
+                    "status": "healthy",
+                    "agent_available": True,
+                    "timestamp": data.get("timestamp", ""),
+                    "error": None,
+                    "chat_test": chat_test_result if test_chat else None,
+                    "chat_error": chat_error
+                }
+            else:
+                return {
+                    "connected": True,
+                    "status": "partial",  # 연결은 되지만 완전하지 않음
+                    "agent_available": health_ok,
+                    "timestamp": data.get("timestamp", ""),
+                    "error": chat_error if test_chat else "에이전트 사용 불가",
+                    "chat_test": chat_test_result if test_chat else None,
+                    "chat_error": chat_error
+                }
+                
+        except requests.exceptions.ConnectionError:
+            return {
+                "connected": False,
+                "status": "disconnected",
+                "agent_available": False,
+                "timestamp": "",
+                "error": "서버에 연결할 수 없습니다",
+                "chat_test": False
             }
-            display_messages.append(display_msg)
+        except requests.exceptions.Timeout:
+            return {
+                "connected": False,
+                "status": "timeout",
+                "agent_available": False,
+                "timestamp": "",
+                "error": "연결 시간 초과",
+                "chat_test": False
+            }
+        except Exception as e:
+            return {
+                "connected": False,
+                "status": "error",
+                "agent_available": False,
+                "timestamp": "",
+                "error": str(e),
+                "chat_test": False
+            }
+
+    def get_agent_status(self) -> Dict[str, Any]:
+        """에이전트 상태 정보 반환 (실시간 ADK API 연결 상태 포함)"""
+        # ADK API 서버 연결 상태 실시간 확인
+        adk_connection = self.check_adk_api_connection()
         
-        return display_messages 
+        return {
+            "agent_type": self.agent_type,
+            "agent_available": self.agent is not None,
+            "agent_name": getattr(self.agent, 'name', 'Unknown') if self.agent else None,
+            "conversation_count": len(self.conversation_history),
+            "adk_api_available": ADK_API_AVAILABLE,
+            "adk_api_connected": adk_connection["connected"],
+            "adk_api_status": adk_connection["status"],
+            "adk_api_error": adk_connection["error"],
+            "real_agent_available": REAL_AGENT_AVAILABLE,
+            "fallback_available": FALLBACK_AGENT_AVAILABLE
+        } 
