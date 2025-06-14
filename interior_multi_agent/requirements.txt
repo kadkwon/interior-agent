@@ -1,5 +1,24 @@
-google-adk
-python-dotenv
-requests
-asyncio
-aiohttp 
+# Vertex AI Agent Engine deployment package requirements
+# Documentation recommendation: Pin package versions for reproducible builds
+
+# Core Agent Engine packages
+google-cloud-aiplatform[adk,agent_engines]>=1.50.0
+google-adk>=0.1.0
+
+# Cloud service integration
+google-cloud-secret-manager>=2.18.0
+google-cloud-storage>=2.10.0
+google-cloud-firestore>=2.13.0
+firebase-admin>=6.2.0
+
+# Basic dependencies
+python-dotenv>=1.0.0
+requests>=2.31.0
+aiohttp>=3.8.0
+
+# Agent Engine documentation recommended packages
+cloudpickle>=2.2.1
+pydantic>=2.5.0
+
+# Compatibility packages
+asyncio 

@@ -1,0 +1,25 @@
+# Vertex AI Agent Engine 프로덕션 배포용 - 버전 고정
+# 문서 모범 사례: 재현 가능한 빌드를 위한 정확한 버전 명시
+
+# 핵심 Agent Engine 패키지 (정확한 버전)
+google-cloud-aiplatform[adk,agent_engines]==1.50.0
+google-adk==0.1.0
+
+# 클라우드 서비스 연동 (호환성 검증된 버전)
+google-cloud-secret-manager==2.18.0
+google-cloud-storage==2.10.0
+google-cloud-firestore==2.13.0
+firebase-admin==6.2.0
+
+# 기본 의존성 (안정 버전)
+python-dotenv==1.0.0
+requests==2.31.0
+aiohttp==3.8.6
+
+# Agent Engine 문서 권장 패키지 (고정 버전)
+cloudpickle==2.2.1
+pydantic==2.5.3
+
+# 추가 도구
+uuid4==1.1.4
+datetime 
