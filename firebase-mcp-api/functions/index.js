@@ -674,92 +674,7 @@ exports.firestoreSetDocument = functions.https.onRequest((req, res) => {
   });
 });
 
-// Firestore 주소 검색 (description 필드 기준)
-exports.firestoreSearchByDescription = functions.https.onRequest((req, res) => {
-  return cors(req, res, async () => {
-    try {
-      const { searchTerm, collectionPath = 'addressesJson', limit = 50, exactMatch = false } = req.body || req.query;
-      
-      if (!searchTerm) {
-        throw new Error('searchTerm이 필요합니다.');
-      }
-      
-      const db = admin.firestore();
-      const collection = db.collection(collectionPath);
-      
-      let query;
-      
-      if (exactMatch) {
-        // 정확한 매칭
-        query = collection.where('description', '==', searchTerm).limit(limit);
-      } else {
-        // 부분 매칭을 위해 모든 문서를 가져와서 필터링
-        query = collection.limit(1000); // 최대 1000개 문서 검색
-      }
-      
-      const snapshot = await query.get();
-      const results = [];
-      
-      snapshot.forEach(doc => {
-        const data = doc.data();
-        const description = data.description || '';
-        
-        if (exactMatch) {
-          // 정확한 매칭인 경우 모든 결과 포함
-          results.push({
-            id: doc.id,
-            path: doc.ref.path,
-            description: description,
-            dataJson: data.dataJson || '{}',
-            relevanceScore: 1.0
-          });
-        } else {
-          // 부분 매칭 확인
-          const searchTermLower = searchTerm.toLowerCase();
-          const descriptionLower = description.toLowerCase();
-          
-          if (descriptionLower.includes(searchTermLower)) {
-            // 단순한 관련성 점수 계산
-            const exactPos = descriptionLower.indexOf(searchTermLower);
-            const relevanceScore = exactPos === 0 ? 1.0 : 
-                                 exactPos > 0 ? 0.8 : 
-                                 descriptionLower.includes(searchTermLower) ? 0.6 : 0.0;
-            
-            results.push({
-              id: doc.id,
-              path: doc.ref.path,
-              description: description,
-              dataJson: data.dataJson || '{}',
-              relevanceScore: relevanceScore
-            });
-          }
-        }
-      });
-      
-      // 관련성 점수로 정렬
-      results.sort((a, b) => b.relevanceScore - a.relevanceScore);
-      
-      // 결과 수 제한
-      const limitedResults = results.slice(0, limit);
-      
-      res.status(200).json({
-        success: true,
-        data: {
-          searchTerm: searchTerm,
-          exactMatch: exactMatch,
-          totalFound: limitedResults.length,
-          results: limitedResults
-        }
-      });
-    } catch (error) {
-      console.error('Firestore 주소 검색 오류:', error);
-      res.status(500).json({
-        success: false,
-        message: error.message
-      });
-    }
-  });
-});
+// 스마트 검색 API는 이미 구현되어 있음
 
 // =================
 // 📁 STORAGE APIs
@@ -904,6 +819,187 @@ exports.mcpListApis = functions.https.onRequest((req, res) => {
       });
     } catch (error) {
       console.error('API 목록 조회 오류:', error);
+      res.status(500).json({
+        success: false,
+        message: error.message
+      });
+    }
+  });
+});
+
+// =================
+// 🔍 SMART SEARCH APIs
+// =================
+
+// 범용 스마트 검색 API
+exports.smartSearch = functions.https.onRequest((req, res) => {
+  return cors(req, res, async () => {
+    try {
+      const {
+        collectionPath,          // 검색할 컬렉션 (선택적)
+        searchQuery,            // 검색어
+        searchFields = [],      // 검색할 필드 목록 (빈 배열이면 전체 필드)
+        limit = 20,            // 검색 결과 제한
+        threshold = 0.3,       // 유사도 임계값 (0.0 ~ 1.0)
+        searchType = 'fuzzy',  // 검색 타입: 'fuzzy', 'exact', 'regex'
+        sortBy = 'score',      // 정렬 기준: 'score', 'field'
+        sortField = '',        // sortBy가 'field'일 때 사용할 필드
+        sortDirection = 'desc' // 정렬 방향
+      } = req.body || req.query;
+
+      if (!searchQuery) {
+        throw new Error('searchQuery는 필수입니다.');
+      }
+
+      const db = admin.firestore();
+      let collections = [];
+
+      // 1. 검색할 컬렉션 결정
+      if (collectionPath) {
+        collections = [collectionPath];
+      } else {
+        // 모든 컬렉션 조회
+        const collectionsRef = await db.listCollections();
+        collections = collectionsRef.map(col => col.id);
+      }
+
+      const searchResults = [];
+
+      // 2. 각 컬렉션에서 검색 수행
+      for (const collection of collections) {
+        let query = db.collection(collection);
+        const snapshot = await query.get();
+        
+        // 3. 문서 검색 및 점수 계산
+        snapshot.forEach(doc => {
+          const data = doc.data();
+          let maxScore = 0;
+          let matches = [];
+
+          // 모든 필드에서 검색
+          const fieldsToSearch = searchFields.length > 0 ? searchFields : Object.keys(data);
+          
+          for (const field of fieldsToSearch) {
+            const fieldValue = data[field];
+            if (typeof fieldValue !== 'string') continue;
+
+            let score = 0;
+            let matched = false;
+
+            switch (searchType) {
+              case 'exact':
+                matched = fieldValue === searchQuery;
+                score = matched ? 1.0 : 0.0;
+                break;
+
+              case 'regex':
+                try {
+                  const regex = new RegExp(searchQuery, 'i');
+                  matched = regex.test(fieldValue);
+                  score = matched ? 0.8 : 0.0;
+                } catch (e) {
+                  console.warn('잘못된 정규식:', e);
+                }
+                break;
+
+              case 'fuzzy':
+              default:
+                // 퍼지 매칭 (부분 문자열 + 위치 가중치)
+                const fieldLower = fieldValue.toLowerCase();
+                const searchLower = searchQuery.toLowerCase();
+                const index = fieldLower.indexOf(searchLower);
+                
+                if (index !== -1) {
+                  // 위치에 따른 가중치 (시작: 1.0, 중간: 0.7, 끝: 0.5)
+                  score = index === 0 ? 1.0 :
+                         index <= fieldValue.length / 3 ? 0.8 :
+                         index <= fieldValue.length / 2 ? 0.6 : 0.4;
+                  
+                  matched = true;
+                }
+                break;
+            }
+
+            if (matched) {
+              matches.push({
+                field,
+                value: fieldValue,
+                score
+              });
+              maxScore = Math.max(maxScore, score);
+            }
+          }
+
+          // 임계값을 넘는 결과만 저장
+          if (maxScore >= threshold) {
+            searchResults.push({
+              id: doc.id,
+              collection: collection,
+              path: doc.ref.path,
+              data: data,
+              score: maxScore,
+              matches: matches,
+              createTime: doc.createTime,
+              updateTime: doc.updateTime
+            });
+          }
+        });
+      }
+
+      // 4. 결과 정렬
+      searchResults.sort((a, b) => {
+        if (sortBy === 'field' && sortField) {
+          const aValue = a.data[sortField];
+          const bValue = b.data[sortField];
+          return sortDirection === 'desc' ? 
+            (bValue > aValue ? 1 : -1) :
+            (aValue > bValue ? 1 : -1);
+        }
+        // 기본: 점수 기준 정렬
+        return sortDirection === 'desc' ? 
+          (b.score - a.score) :
+          (a.score - b.score);
+      });
+
+      // 5. 결과 제한 및 포맷팅
+      const limitedResults = searchResults.slice(0, limit);
+      
+      // 검색 결과 하이라이팅
+      const highlightedResults = limitedResults.map(result => {
+        const highlightedMatches = result.matches.map(match => ({
+          ...match,
+          highlighted: match.value.replace(
+            new RegExp(searchQuery, 'gi'),
+            match => `<<${match}>>`
+          )
+        }));
+
+        return {
+          ...result,
+          matches: highlightedMatches
+        };
+      });
+
+      res.status(200).json({
+        success: true,
+        data: {
+          query: {
+            searchQuery,
+            searchType,
+            collections: collections,
+            searchFields,
+            threshold
+          },
+          results: highlightedResults,
+          totalFound: searchResults.length,
+          returnedCount: highlightedResults.length,
+          hasMore: searchResults.length > limit,
+          executionTime: new Date().getTime()
+        }
+      });
+
+    } catch (error) {
+      console.error('스마트 검색 오류:', error);
       res.status(500).json({
         success: false,
         message: error.message
