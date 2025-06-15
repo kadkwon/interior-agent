@@ -61,7 +61,14 @@ from .agent.address_management_agent import (
     search_addresses_by_keyword
 )
 
-# 스케줄 관리 에이전트는 임시 제거됨
+# 스케줄 관리 에이전트 import
+from .agent.schedule_management_agent import (
+    register_new_schedule,
+    update_existing_schedule,
+    delete_schedule_record,
+    list_schedules_by_date,
+    list_schedules_by_address
+)
 
 # 통합 인테리어 관리 에이전트 (모든 도구 포함)
 root_agent = LlmAgent(
@@ -82,14 +89,21 @@ root_agent = LlmAgent(
 - **전체 조회**: `list_all_addresses` - 등록된 모든 주소 목록 확인
 - **키워드 검색**: `search_addresses_by_keyword` - 특정 조건으로 주소 검색
 
-### 2. Firebase 데이터 관리
+### 2. 스케줄 관리 시스템
+- **스케줄 등록**: `register_new_schedule` - 새로운 일정 등록
+- **스케줄 수정**: `update_existing_schedule` - 기존 일정 내용 수정
+- **스케줄 삭제**: `delete_schedule_record` - 특정 날짜 일정 삭제
+- **날짜별 조회**: `list_schedules_by_date` - 특정 날짜의 모든 일정 조회
+- **주소별 조회**: `list_schedules_by_address` - 특정 주소/카테고리의 모든 일정 조회
+
+### 3. Firebase 데이터 관리
 - **일정 조회**: `query_schedule_collection` - 스케줄 컬렉션 데이터 조회
 - **프로젝트 정보**: `get_firebase_project_info` - Firebase 프로젝트 상태 확인
 - **컬렉션 목록**: `list_firestore_collections` - 사용 가능한 컬렉션 리스트
 - **범용 조회**: `query_any_collection` - 모든 컬렉션 유연한 쿼리
 - **스토리지 관리**: `list_storage_files` - Firebase Storage 파일 목록
 
-### 3. 지급 계획 관리
+### 4. 지급 계획 관리
 - **현장 주소 요청**: `request_site_address` - 지급 계획용 현장 정보 수집
 - **분할 지급 계획**: `make_payment_plan` - 공사 단계별 지급 계획 생성
 - **시스템 테스트**: `test_payment_system` - 지급 시스템 동작 검증
@@ -106,6 +120,13 @@ root_agent = LlmAgent(
 2. `search_addresses_by_keyword` → 주소 검색
 3. `update_existing_address` → 주소 정보 수정
 4. `delete_address_record` → 주소 삭제
+
+**스케줄 관리 시:**
+1. `register_new_schedule` → 새 일정 등록
+2. `list_schedules_by_date` → 특정 날짜 일정 조회
+3. `list_schedules_by_address` → 특정 주소/카테고리 전체 일정 조회
+4. `update_existing_schedule` → 기존 일정 수정
+5. `delete_schedule_record` → 일정 삭제
 
 ## 💬 응답 형식 가이드
 - **성공 시**: 작업 결과를 구조화된 형태로 명확히 제시
@@ -140,7 +161,12 @@ root_agent = LlmAgent(
         list_all_addresses,
         search_addresses_by_keyword,
         
-        # 스케줄 관리 도구는 임시 제거됨
+        # 스케줄 관리 도구
+        register_new_schedule,
+        update_existing_schedule,
+        delete_schedule_record,
+        list_schedules_by_date,
+        list_schedules_by_address,
         
         # 지급 계획 도구
         request_site_address,
@@ -158,6 +184,6 @@ else:
 logger.info(f"🎯 인테리어 통합 관리 에이전트가 초기화되었습니다. (총 {len(root_agent.tools)}개 도구 로드)")
 logger.info("📋 사용 가능한 기능:")
 logger.info("   - 주소 관리: 5개 도구")
-# logger.info("   - 스케줄 관리: 16개 도구")  # 임시 제거됨 
-logger.info("   - Firebase 관리: 5개 도구")
+logger.info("   - 스케줄 관리: 5개 도구")
+logger.info("   - Firebase 관리: 5개 도구") 
 logger.info("   - 지급 계획: 3개 도구") 
