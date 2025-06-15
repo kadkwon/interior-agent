@@ -115,7 +115,7 @@ def _find_schedule_document(address: str) -> Tuple[bool, Optional[str], Optional
     """
     try:
         # MCP 규칙 검증
-        if not validate_mcp_call("query_any_collection", collection="schedules", address=address):
+        if not validate_mcp_call("query_collection", "schedules", {"address": address}):
             return False, None, None
         
         # schedules 컬렉션 조회
@@ -142,7 +142,7 @@ def _find_schedule_document(address: str) -> Tuple[bool, Optional[str], Optional
         
         log_operation("find_schedule_document", "not_found", {"address": address, "type": "not_found"})
         return False, None, None
-        
+
     except Exception as e:
         error_msg = handle_mcp_error(e, f"문서 검색 중 오류 (address: {address})")
         logger.error(error_msg)
@@ -160,7 +160,7 @@ def _update_events_json(doc_id: str, updated_events: dict) -> dict:
     """
     try:
         # MCP 규칙 검증
-        if not validate_mcp_call("update_document", doc_id=doc_id, events=updated_events):
+        if not validate_mcp_call("update", "schedules", {"doc_id": doc_id, "events": updated_events}):
             return {"status": "error", "message": "MCP 규칙 검증 실패"}
         
         # JSON 문자열로 변환
@@ -180,7 +180,7 @@ def _update_events_json(doc_id: str, updated_events: dict) -> dict:
             return {"status": "success", "data": result}
         else:
             return {"status": "error", "message": "문서 업데이트 실패"}
-            
+        
     except Exception as e:
         error_msg = handle_mcp_error(e, f"eventsJson 업데이트 중 오류 (doc_id: {doc_id})")
         logger.error(error_msg)
@@ -210,10 +210,11 @@ def register_new_schedule(address: str, date: str, work_type: str, memo: str = "
         # 날짜 파싱
         parsed_date = _parse_date_string(date)
         
-        # 스케줄 메모 검증
+        # 스케줄 메모 검증 (특수 카테고리인 경우)
         final_memo = memo or work_type
-        if not validate_schedule_memo(final_memo):
-            return {"status": "error", "message": "❌ 유효하지 않은 메모 내용입니다.", "error_type": "invalid_memo"}
+        if address in SPECIAL_SCHEDULE_CATEGORIES:
+            if not validate_schedule_memo(address, final_memo, ""):
+                return {"status": "error", "message": "❌ 유효하지 않은 메모 내용입니다.", "error_type": "invalid_memo"}
         
         # 문서 검색
         found, doc_id, doc_data = _find_schedule_document(address)
@@ -229,7 +230,7 @@ def register_new_schedule(address: str, date: str, work_type: str, memo: str = "
                 }
             else:
                 return {
-                    "status": "error", 
+                    "status": "error",
                     "message": f"❌ '{address}' 주소를 찾을 수 없습니다. 주소를 먼저 등록해주세요.",
                     "error_type": "address_not_found",
                     "hint": f"특수 카테고리를 사용하려면: {', '.join(SPECIAL_SCHEDULE_CATEGORIES)}"
@@ -274,7 +275,7 @@ def register_new_schedule(address: str, date: str, work_type: str, memo: str = "
                 "message": f"❌ 스케줄 등록 중 오류가 발생했습니다: {update_result.get('message')}",
                 "error_type": "update_failed"
             }
-            
+
     except Exception as e:
         error_msg = handle_mcp_error(e, f"스케줄 등록 중 오류 (address: {address}, date: {date})")
         logger.error(error_msg)
@@ -300,9 +301,10 @@ def update_existing_schedule(address: str, date: str, new_memo: str, new_work_ty
         # 날짜 파싱
         parsed_date = _parse_date_string(date)
         
-        # 메모 검증
-        if not validate_schedule_memo(new_memo):
-            return {"status": "error", "message": "❌ 유효하지 않은 메모 내용입니다.", "error_type": "invalid_memo"}
+        # 메모 검증 (특수 카테고리인 경우)
+        if address in SPECIAL_SCHEDULE_CATEGORIES:
+            if not validate_schedule_memo(address, new_memo, ""):
+                return {"status": "error", "message": "❌ 유효하지 않은 메모 내용입니다.", "error_type": "invalid_memo"}
         
         # 문서 검색
         found, doc_id, doc_data = _find_schedule_document(address)
@@ -372,7 +374,7 @@ def update_existing_schedule(address: str, date: str, new_memo: str, new_work_ty
                 "message": f"❌ 스케줄 수정 중 오류가 발생했습니다: {update_result.get('message')}",
                 "error_type": "update_failed"
             }
-            
+
     except Exception as e:
         error_msg = handle_mcp_error(e, f"스케줄 수정 중 오류 (address: {address}, date: {date})")
         logger.error(error_msg)
@@ -428,7 +430,7 @@ def delete_schedule_record(address: str, date: str) -> dict:
         
         if not keys_to_delete:
             return {
-                "status": "error",
+                "status": "error", 
                 "message": f"❌ {parsed_date}에 삭제할 스케줄을 찾을 수 없습니다.",
                 "error_type": "date_not_found"
             }
@@ -459,7 +461,7 @@ def delete_schedule_record(address: str, date: str) -> dict:
                 "message": f"❌ 스케줄 삭제 중 오류가 발생했습니다: {update_result.get('message')}",
                 "error_type": "update_failed"
             }
-            
+
     except Exception as e:
         error_msg = handle_mcp_error(e, f"스케줄 삭제 중 오류 (address: {address}, date: {date})")
         logger.error(error_msg)
@@ -483,7 +485,7 @@ def list_schedules_by_date(date: str) -> dict:
         parsed_date = _parse_date_string(date)
         
         # MCP 규칙 검증
-        if not validate_mcp_call("query_any_collection", collection="schedules", date=parsed_date):
+        if not validate_mcp_call("query_collection", "schedules", {"date": parsed_date}):
             return {"status": "error", "message": "❌ MCP 규칙 검증 실패", "error_type": "mcp_validation_failed"}
         
         # 모든 schedules 문서 조회
@@ -557,7 +559,7 @@ def list_schedules_by_address(address: str) -> dict:
             return {"status": "error", "message": "❌ 주소 또는 카테고리는 필수 입력사항입니다.", "error_type": "invalid_input"}
         
         # MCP 규칙 검증
-        if not validate_mcp_call("query_any_collection", collection="schedules", address=address):
+        if not validate_mcp_call("query_collection", "schedules", {"address": address}):
             return {"status": "error", "message": "❌ MCP 규칙 검증 실패", "error_type": "mcp_validation_failed"}
         
         # 문서 검색
@@ -618,7 +620,7 @@ def list_schedules_by_address(address: str) -> dict:
                 "action": "listed_by_address"
             }
         }
-        
+
     except Exception as e:
         error_msg = handle_mcp_error(e, f"주소별 스케줄 조회 중 오류 (address: {address})")
         logger.error(error_msg)

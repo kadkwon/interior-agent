@@ -48,7 +48,8 @@ def validate_mcp_call(operation_type: str, collection: str, data: Optional[Dict[
             'read', 'write', 'update', 'delete',
             'data_query', 'collection_list', 'project_info',
             'address_register', 'address_update', 'address_delete',
-            'query_collection', 'list_collections'
+            'query_collection', 'list_collections',
+            'single_document', 'advanced_list'  # 새로운 MCP 호환 작업 유형
         ]
         if operation_type not in valid_operations:
             raise MCPValidationError(f"지원되지 않는 작업 유형: {operation_type}")

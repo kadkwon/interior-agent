@@ -176,9 +176,73 @@ class FirebaseCloudFunctionsClient:
     # 🗄️ FIRESTORE APIs
     # =================
     
+    def get_document(self, collection_path: str, document_id: str) -> Dict[str, Any]:
+        """
+        MCP 호환: 단일 Firestore 문서를 조회합니다.
+        
+        Args:
+            collection_path: 컬렉션 경로 (예: 'addressesJson', 'schedules')
+            document_id: 문서 ID
+            
+        Returns:
+            Dict: 문서 데이터 또는 오류 정보
+        """
+        data = {
+            "collectionPath": collection_path,
+            "documentId": document_id
+        }
+        return self._make_request('/firestoreGetDocument', 'POST', data)
+    
+    def list_documents(self, collection_path: str, limit: int = 10, 
+                      order_by: str = "", order_direction: str = 'asc',
+                      where: List = None, start_after: str = None, 
+                      end_before: str = None, select: List = None, 
+                      offset: int = 0) -> Dict[str, Any]:
+        """
+        MCP 호환: 고급 Firestore 문서 목록을 조회합니다.
+        필터링, 정렬, 페이지네이션을 지원합니다.
+        
+        Args:
+            collection_path: 컬렉션 경로 (예: 'addressesJson', 'schedules')
+            limit: 조회할 문서 수 제한 (기본값: 10, 최대: 1000)
+            order_by: 정렬 필드명
+            order_direction: 정렬 방향 ('asc' 또는 'desc')
+            where: WHERE 조건 배열 (예: [["field", "==", "value"]])
+            start_after: 페이지네이션 시작 커서
+            end_before: 페이지네이션 종료 커서
+            select: 선택할 필드 배열
+            offset: 오프셋 (비효율적이지만 호환성을 위해 지원)
+            
+        Returns:
+            Dict: 문서 목록과 페이지네이션 정보
+        """
+        data = {
+            "collectionPath": collection_path,
+            "limit": limit,
+            "offset": offset,
+            "orderDirection": order_direction
+        }
+        
+        if order_by:
+            data["orderBy"] = order_by
+            
+        if where:
+            data["where"] = where
+            
+        if start_after:
+            data["startAfter"] = start_after
+            
+        if end_before:
+            data["endBefore"] = end_before
+            
+        if select:
+            data["select"] = select
+        
+        return self._make_request('/firestoreListDocuments', 'POST', data)
+
     def get_documents(self, paths: List[str]) -> Dict[str, Any]:
         """
-        Firestore 문서들을 조회합니다.
+        Firestore 문서들을 조회합니다. (기존 함수 - 여러 경로)
         
         Args:
             paths: 문서 경로 리스트 (예: ['users/user123', 'posts/post456'])
@@ -190,7 +254,7 @@ class FirebaseCloudFunctionsClient:
         """Firestore 컬렉션 목록을 조회합니다."""
         return self._make_request('/firestoreListCollections', 'POST', {})
     
-    def query_collection(self, collection_path: str, limit: int = 50, where_conditions: List[Dict] = None, order_by: str = None) -> Dict[str, Any]:
+    def query_collection(self, collection_path: str, limit: int = 50, where_conditions: List[Dict] = None, order_by: str = "") -> Dict[str, Any]:
         """
         Firestore 컬렉션을 쿼리합니다.
         
