@@ -5,15 +5,16 @@ import os
 import requests
 from typing import List, Dict, Any
 
-# 1순위: ADK API 클라이언트 시도
+# 1순위: FastAPI 클라이언트 시도
 try:
-    from adk_api_client import adk_interior_agent
-    ADK_API_AVAILABLE = True
-    print("✅ ADK API 클라이언트 연동 성공")
+    from fastapi_client import FastAPIClient, test_connection
+    FASTAPI_AVAILABLE = True
+    print("✅ FastAPI 클라이언트 연동 성공")
 except ImportError as e:
-    print(f"⚠️ ADK API 클라이언트 연동 실패: {e}")
-    ADK_API_AVAILABLE = False
-    adk_interior_agent = None
+    print(f"⚠️ FastAPI 클라이언트 연동 실패: {e}")
+    FASTAPI_AVAILABLE = False
+    FastAPIClient = None
+    test_connection = None
 
 # 2순위: 실제 에이전트 연동 시도 (기존 real_agent_integration)
 try:
@@ -40,12 +41,13 @@ class ChatManager:
         self.conversation_history: List[Dict[str, Any]] = []
         self.context_summary = ""
         self.max_history_length = 20
+        self.fastapi_client = None
     
         # 에이전트 우선순위에 따른 선택
-        if ADK_API_AVAILABLE and adk_interior_agent and adk_interior_agent.available:
-            self.agent = adk_interior_agent
-            self.agent_type = "ADK_API"
-            print("🚀 ADK API 에이전트 선택됨")
+        if FASTAPI_AVAILABLE and test_connection():
+            self.fastapi_client = FastAPIClient()
+            self.agent_type = "FASTAPI"
+            print("🚀 FastAPI 에이전트 선택됨")
         elif REAL_AGENT_AVAILABLE and real_interior_agent:
             self.agent = real_interior_agent
             self.agent_type = "REAL_AGENT"
@@ -60,20 +62,24 @@ class ChatManager:
             print("❌ 사용 가능한 에이전트가 없습니다")
         
         # 에이전트 정보 출력
-        if self.agent:
+        if self.agent_type == "FASTAPI":
+            print(f"✅ FastAPI 에이전트 연결 성공")
+            print(f"   - 서버: http://localhost:8505")
+            print(f"   - 타입: Google ADK 공식 방식")
+        elif hasattr(self, 'agent') and self.agent:
             print(f"✅ 에이전트 연결 성공: {self.agent_type}")
             print(f"   - 이름: {getattr(self.agent, 'name', 'Unknown')}")
             print(f"   - 설명: {getattr(self.agent, 'description', 'No description')}")
     
     def get_response(self, user_input: str) -> str:
         """사용자 입력에 대한 응답 생성"""
-        if not self.agent:
+        if self.agent_type == "NONE":
             return "죄송합니다. 현재 시스템을 사용할 수 없습니다. 잠시 후 다시 시도해주세요."
         
         try:
             # 에이전트 타입에 따른 처리
-            if self.agent_type == "ADK_API":
-                response = self._get_adk_response(user_input)
+            if self.agent_type == "FASTAPI":
+                response = self._get_fastapi_response(user_input)
             elif self.agent_type == "REAL_AGENT":
                 response = self._get_real_agent_response(user_input)
             elif self.agent_type == "FALLBACK":
@@ -102,14 +108,25 @@ class ChatManager:
             
             return error_msg
     
-    def _get_adk_response(self, user_input: str) -> str:
-        """ADK API를 통한 응답"""
+    def _get_fastapi_response(self, user_input: str) -> str:
+        """FastAPI를 통한 응답"""
         try:
-            response = adk_interior_agent.generate(user_input)
-            print(f"✅ ADK API 응답 성공: {len(response)} 문자")
-            return response
+            if not self.fastapi_client:
+                self.fastapi_client = FastAPIClient()
+            
+            result = self.fastapi_client.send_message(user_input)
+            
+            if result.get("success"):
+                response = result.get("response", "응답을 받을 수 없습니다.")
+                print(f"✅ FastAPI 응답 성공: {len(response)} 문자")
+                return response
+            else:
+                error = result.get("error", "알 수 없는 오류")
+                print(f"❌ FastAPI 오류: {error}")
+                raise Exception(error)
+                
         except Exception as e:
-            print(f"❌ ADK API 오류: {e}")
+            print(f"❌ FastAPI 통신 오류: {e}")
             raise e
     
     def _get_real_agent_response(self, user_input: str) -> str:
@@ -174,8 +191,8 @@ class ChatManager:
         self.context_summary = ""
         print("✅ 대화 기록이 초기화되었습니다.")
     
-    def check_adk_api_connection(self, test_chat=False) -> Dict[str, Any]:
-        """ADK API 서버 연결 상태 실시간 확인"""
+    def check_fastapi_connection(self, test_chat=False) -> Dict[str, Any]:
+        """FastAPI 서버 연결 상태 실시간 확인"""
         try:
             # 1단계: Health Check
             response = requests.get("http://localhost:8505/health", timeout=3)
@@ -266,19 +283,19 @@ class ChatManager:
             }
 
     def get_agent_status(self) -> Dict[str, Any]:
-        """에이전트 상태 정보 반환 (실시간 ADK API 연결 상태 포함)"""
-        # ADK API 서버 연결 상태 실시간 확인
-        adk_connection = self.check_adk_api_connection()
+        """에이전트 상태 정보 반환 (실시간 FastAPI 연결 상태 포함)"""
+        # FastAPI 서버 연결 상태 실시간 확인
+        fastapi_connection = self.check_fastapi_connection()
         
         return {
             "agent_type": self.agent_type,
-            "agent_available": self.agent is not None,
-            "agent_name": getattr(self.agent, 'name', 'Unknown') if self.agent else None,
+            "agent_available": self.agent_type != "NONE",
+            "agent_name": "FastAPI Agent" if self.agent_type == "FASTAPI" else getattr(self, 'agent', {}).get('name', 'Unknown'),
             "conversation_count": len(self.conversation_history),
-            "adk_api_available": ADK_API_AVAILABLE,
-            "adk_api_connected": adk_connection["connected"],
-            "adk_api_status": adk_connection["status"],
-            "adk_api_error": adk_connection["error"],
+            "fastapi_available": FASTAPI_AVAILABLE,
+            "fastapi_connected": fastapi_connection["connected"],
+            "fastapi_status": fastapi_connection["status"],
+            "fastapi_error": fastapi_connection["error"],
             "real_agent_available": REAL_AGENT_AVAILABLE,
             "fallback_available": FALLBACK_AGENT_AVAILABLE
         } 
