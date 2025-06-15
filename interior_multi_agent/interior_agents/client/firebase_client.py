@@ -367,6 +367,46 @@ class FirebaseCloudFunctionsClient:
         data = {"filePath": file_path}
         return self._make_request('/storageGetDownloadUrl', 'POST', data)
     
+    def smart_search(self, search_query: str, collection_path: str = None,
+                    search_fields: List[str] = None, search_type: str = 'fuzzy',
+                    threshold: float = 0.3, sort_by: str = 'score',
+                    sort_field: str = '', sort_direction: str = 'desc',
+                    limit: int = 20) -> Dict[str, Any]:
+        """
+        범용 스마트 검색 API를 호출합니다.
+        
+        Args:
+            search_query: 검색어 (필수)
+            collection_path: 검색할 특정 컬렉션 (선택)
+            search_fields: 검색할 필드 목록 (선택)
+            search_type: 검색 방식 (fuzzy/exact/regex)
+            threshold: 유사도 임계값 (0.0~1.0)
+            sort_by: 정렬 기준 (score/field)
+            sort_field: 정렬 기준 필드명
+            sort_direction: 정렬 방향 (asc/desc)
+            limit: 검색 결과 제한
+            
+        Returns:
+            Dict: 검색 결과와 메타데이터
+        """
+        data = {
+            "searchQuery": search_query,
+            "limit": limit,
+            "searchType": search_type,
+            "threshold": threshold,
+            "sortBy": sort_by,
+            "sortDirection": sort_direction
+        }
+        
+        if collection_path:
+            data["collectionPath"] = collection_path
+        if search_fields:
+            data["searchFields"] = search_fields
+        if sort_field:
+            data["sortField"] = sort_field
+        
+        return self._make_request('/smartSearch', 'POST', data)
+    
     # =================
     # 📄 기타 APIs
     # =================
