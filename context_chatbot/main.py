@@ -31,9 +31,9 @@ with st.sidebar:
     st.subheader("현재 에이전트")
     agent_type = agent_status.get("agent_type", "NONE")
     
-    if agent_type == "ADK_API":
-        st.success("🚀 ADK API 에이전트")
-        st.info("실제 agent_main.py와 HTTP API로 연동")
+    if agent_type == "FASTAPI":
+        st.success("🚀 FastAPI 에이전트")
+        st.info("Google ADK 공식 방식 - SSE 스트리밍 지원")
     elif agent_type == "REAL_AGENT":
         st.success("🔧 실제 에이전트")
         st.info("개별 도구를 직접 사용")
@@ -43,32 +43,32 @@ with st.sidebar:
     else:
         st.error("❌ 에이전트 없음")
     
-    # ADK API 서버 연결 상태
-    st.subheader("🔗 ADK API 서버 연결")
-    adk_status = agent_status.get("adk_api_status", "unknown")
+    # FastAPI 서버 연결 상태
+    st.subheader("🔗 FastAPI 서버 연결")
+    fastapi_status = agent_status.get("fastapi_status", "unknown")
     
-    if adk_status == "healthy":
+    if fastapi_status == "healthy":
         st.success("✅ 완전 연결됨 (정상 작동)")
         st.info("🟢 서버 및 에이전트 모두 정상")
-    elif adk_status == "partial":
+    elif fastapi_status == "partial":
         st.warning("⚠️ 부분 연결됨 (에이전트 문제)")
         st.info("🟡 서버는 연결되지만 에이전트 오류")
-        error_msg = agent_status.get("adk_api_error", "에이전트 사용 불가")
+        error_msg = agent_status.get("fastapi_error", "에이전트 사용 불가")
         st.error(f"문제: {error_msg}")
-    elif agent_status.get("adk_api_connected"):
+    elif agent_status.get("fastapi_connected"):
         st.warning("⚠️ 연결됨 (상태 불명)")
         st.info("🟡 서버 연결은 되지만 상태 확인 필요")
     else:
         st.error("❌ 연결 실패")
-        error_msg = agent_status.get("adk_api_error", "알 수 없는 오류")
+        error_msg = agent_status.get("fastapi_error", "알 수 없는 오류")
         st.warning(f"오류: {error_msg}")
     
     # 에이전트 가용성 상태
     st.subheader("에이전트 가용성")
-    if agent_status.get("adk_api_available"):
-        st.success("✅ ADK API 모듈 로드됨")
+    if agent_status.get("fastapi_available"):
+        st.success("✅ FastAPI 모듈 로드됨")
     else:
-        st.error("❌ ADK API 모듈 로드 실패")
+        st.error("❌ FastAPI 모듈 로드 실패")
         
     if agent_status.get("real_agent_available"):
         st.success("✅ 실제 에이전트 사용 가능")
@@ -88,21 +88,21 @@ with st.sidebar:
     if st.button("🔄 연결 상태 새로고침"):
         st.rerun()
     
-    # ADK API 서버 직접 테스트 버튼
-    if st.button("🧪 ADK API 기본 테스트"):
-        connection_status = st.session_state.chat_manager.check_adk_api_connection(test_chat=False)
+    # FastAPI 서버 직접 테스트 버튼
+    if st.button("🧪 FastAPI 기본 테스트"):
+        connection_status = st.session_state.chat_manager.check_fastapi_connection(test_chat=False)
         if connection_status["status"] == "healthy":
-            st.success("✅ ADK API 서버 연결 성공!")
+            st.success("✅ FastAPI 서버 연결 성공!")
         elif connection_status["status"] == "partial":
             st.warning("⚠️ 부분 연결 - 에이전트 문제 있음")
         else:
-            st.error("❌ ADK API 서버 연결 실패")
+            st.error("❌ FastAPI 서버 연결 실패")
         st.json(connection_status)
     
     # 완전한 채팅 테스트 버튼
-    if st.button("🚀 ADK API 완전 테스트"):
+    if st.button("🚀 FastAPI 완전 테스트"):
         with st.spinner("채팅 테스트 중..."):
-            connection_status = st.session_state.chat_manager.check_adk_api_connection(test_chat=True)
+            connection_status = st.session_state.chat_manager.check_fastapi_connection(test_chat=True)
             
             if connection_status["status"] == "healthy" and connection_status.get("chat_test"):
                 st.success("✅ 완전 테스트 성공! 모든 기능 정상")
