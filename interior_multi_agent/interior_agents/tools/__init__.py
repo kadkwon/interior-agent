@@ -8,7 +8,9 @@ from .firebase_tools import (
     get_firebase_project_info,
     list_firestore_collections,
     query_any_collection,
-    list_storage_files
+    list_storage_files,
+    get_single_document,
+    list_documents_advanced
 )
 
 __all__ = [

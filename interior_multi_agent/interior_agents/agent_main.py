@@ -49,7 +49,9 @@ from .tools import (
     get_firebase_project_info,
     list_firestore_collections,
     query_any_collection,
-    list_storage_files
+    list_storage_files,
+    get_single_document,
+    list_documents_advanced
 )
 
 # 주소 관리 에이전트 import  
@@ -102,6 +104,8 @@ root_agent = LlmAgent(
 - **컬렉션 목록**: `list_firestore_collections` - 사용 가능한 컬렉션 리스트
 - **범용 조회**: `query_any_collection` - 모든 컬렉션 유연한 쿼리
 - **스토리지 관리**: `list_storage_files` - Firebase Storage 파일 목록
+- **단일 문서 조회**: `get_single_document` - MCP 호환 단일 문서 조회 (성능 최적화)
+- **고급 문서 목록**: `list_documents_advanced` - MCP 호환 고급 필터링/정렬/페이지네이션
 
 ### 4. 지급 계획 관리
 - **현장 주소 요청**: `request_site_address` - 지급 계획용 현장 정보 수집
@@ -153,6 +157,8 @@ root_agent = LlmAgent(
         list_firestore_collections,
         query_any_collection,
         list_storage_files,
+        get_single_document,
+        list_documents_advanced,
         
         # 주소 관리 도구
         register_new_address,
@@ -185,5 +191,5 @@ logger.info(f"🎯 인테리어 통합 관리 에이전트가 초기화되었습
 logger.info("📋 사용 가능한 기능:")
 logger.info("   - 주소 관리: 5개 도구")
 logger.info("   - 스케줄 관리: 5개 도구")
-logger.info("   - Firebase 관리: 5개 도구") 
+logger.info("   - Firebase 관리: 7개 도구 (MCP 호환 2개 추가)") 
 logger.info("   - 지급 계획: 3개 도구") 

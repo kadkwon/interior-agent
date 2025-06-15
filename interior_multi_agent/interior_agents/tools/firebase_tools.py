@@ -17,6 +17,14 @@ except ImportError:
         log_operation
     )
 
+# 스마트 검색을 위한 퓨지 매칭 라이브러리
+try:
+    from difflib import SequenceMatcher
+    import re
+    FUZZY_SEARCH_AVAILABLE = True
+except ImportError:
+    FUZZY_SEARCH_AVAILABLE = False
+
 # Firebase 클라이언트 import
 try:
     from ..client.firebase_client import firebase_client, schedule_formatter
@@ -40,6 +48,102 @@ except ImportError:
     firebase_client = DummyFirebaseClient()
     schedule_formatter = DummyScheduleFormatter()
     FIREBASE_AVAILABLE = False
+
+# 스마트 검색 헬퍼 함수들
+def _calculate_similarity(text1: str, text2: str) -> float:
+    """두 텍스트 간의 유사도를 계산합니다 (0.0 ~ 1.0)"""
+    if not FUZZY_SEARCH_AVAILABLE:
+        return 1.0 if text1 == text2 else 0.0
+    
+    if text1 == text2:
+        return 1.0
+    
+    # 공백 제거 후 비교
+    clean1 = re.sub(r'\s+', '', text1.lower())
+    clean2 = re.sub(r'\s+', '', text2.lower())
+    
+    if clean1 == clean2:
+        return 0.95  # 공백만 다른 경우
+    
+    # SequenceMatcher로 유사도 계산
+    matcher = SequenceMatcher(None, clean1, clean2)
+    return matcher.ratio()
+
+def _find_best_match_documents(target_id: str, documents: list, threshold: float = 0.7) -> list:
+    """문서 목록에서 가장 유사한 문서들을 찾습니다"""
+    if not documents:
+        return []
+    
+    matches = []
+    for doc in documents:
+        doc_id = doc.get('id', '')
+        similarity = _calculate_similarity(target_id, doc_id)
+        if similarity >= threshold:
+            matches.append({
+                'document': doc,
+                'similarity': similarity,
+                'original_id': doc_id
+            })
+    
+    # 유사도 순으로 정렬
+    matches.sort(key=lambda x: x['similarity'], reverse=True)
+    return matches
+
+def _smart_document_search(collection_path: str, document_id: str) -> dict:
+    """스마트 문서 검색: 정확 매칭 실패 시 유사 문서를 찾습니다"""
+    try:
+        # 1단계: 전체 문서 목록 조회
+        list_response = firebase_client.list_documents(
+            collection_path=collection_path,
+            limit=100  # 충분한 수량 조회
+        )
+        
+        if not (list_response.get("success") and validate_response(list_response)):
+            return {
+                "status": "error",
+                "message": f"문서 목록 조회 실패: {collection_path}"
+            }
+        
+        documents = list_response.get("data", {}).get("documents", [])
+        if not documents:
+            return {
+                "status": "not_found",
+                "message": f"{collection_path} 컬렉션이 비어있습니다."
+            }
+        
+        # 2단계: 유사 문서 검색
+        matches = _find_best_match_documents(document_id, documents, threshold=0.7)
+        
+        if not matches:
+            return {
+                "status": "not_found",
+                "message": f"'{document_id}'와 유사한 문서를 찾을 수 없습니다.",
+                "available_documents": [doc.get('id', '') for doc in documents[:10]]  # 처음 10개만
+            }
+        
+        best_match = matches[0]
+        similarity = best_match['similarity']
+        found_doc = best_match['document']
+        original_id = best_match['original_id']
+        
+        # 3단계: 최적 매칭 문서 반환
+        return {
+            "status": "success",
+            "document": found_doc,
+            "exists": True,
+            "smart_search": True,
+            "original_query": document_id,
+            "found_id": original_id,
+            "similarity": similarity,
+            "message": f"'{document_id}' 대신 '{original_id}' 문서를 찾았습니다 (유사도: {similarity:.1%})",
+            "alternatives": [match['original_id'] for match in matches[1:3]]  # 다른 후보 최대 2개
+        }
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"스마트 검색 중 오류: {str(e)}"
+        }
 
 def query_schedule_collection(limit: int = 50) -> dict:
     """
@@ -316,6 +420,290 @@ def list_storage_files(prefix: str = "") -> dict:
 # =================
 # 헬퍼 함수들
 # =================
+
+def get_single_document(collection_path: str, document_id: str) -> dict:
+    """
+    🧠 스마트 문서 검색: 단일 Firestore 문서를 지능적으로 조회합니다.
+    정확한 매칭 실패 시 유사한 문서를 자동으로 찾아 제안합니다.
+    
+    Args:
+        collection_path: 컬렉션 경로 (예: 'addressesJson', 'schedules')
+        document_id: 문서 ID (공백, 특수문자 등 유연하게 처리)
+        
+    Returns:
+        dict: 문서 데이터와 스마트 검색 결과
+    """
+    try:
+        # 🚨 0.1 Firebase MCP 호출 의무화 검증
+        if not validate_mcp_call("single_document", collection_path, {"document_id": document_id}):
+            log_operation("get_single_document", collection_path, {"error": "MCP 호출 의무화 검증 실패"}, False)
+            return {
+                "status": "error",
+                "message": "데이터 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
+            }
+
+        # 🚨 0.2-2 1단계: 정확한 매칭 시도
+        response = firebase_client.get_document(collection_path, document_id)
+        
+        # 🚨 0.2-3 호출 결과 확인 및 검증
+        is_valid = validate_response(response)
+        
+        if is_valid and response.get("success"):
+            document_data = response.get("data", {})
+            
+            log_operation("get_single_document", collection_path, {"document_id": document_id, "method": "exact_match"}, True)
+            return {
+                "status": "success",
+                "document": document_data,
+                "exists": document_data.get("exists", True),
+                "search_method": "exact_match",
+                "message": f"{collection_path}/{document_id} 문서를 성공적으로 조회했습니다."
+            }
+        else:
+            # 404 오류 처리 (문서가 존재하지 않는 경우)
+            if response.get("status_code") == 404:
+                
+                # 🧠 2단계: 스마트 검색 시도
+                log_operation("get_single_document", collection_path, {"document_id": document_id, "method": "smart_search_attempt"}, True)
+                smart_result = _smart_document_search(collection_path, document_id)
+                
+                if smart_result.get("status") == "success":
+                    log_operation("get_single_document", collection_path, {
+                        "document_id": document_id, 
+                        "found_id": smart_result.get("found_id"),
+                        "similarity": smart_result.get("similarity"),
+                        "method": "smart_search_success"
+                    }, True)
+                    return smart_result
+                else:
+                    # 스마트 검색도 실패한 경우
+                    log_operation("get_single_document", collection_path, {"document_id": document_id, "method": "all_failed"}, False)
+                    return {
+                        "status": "not_found",
+                        "exists": False,
+                        "search_method": "smart_search_failed",
+                        "message": f"{collection_path}/{document_id} 문서를 찾을 수 없습니다.",
+                        "smart_search_result": smart_result.get("message", ""),
+                        "available_documents": smart_result.get("available_documents", [])
+                    }
+            else:
+                return {
+                    "status": "error",
+                    "message": handle_mcp_error(Exception(f"문서 조회 실패: {response.get('message', '알 수 없는 오류')}"), "get_single_document")
+                }
+            
+    except Exception as e:
+        log_operation("get_single_document", collection_path, {"error": str(e)}, False)
+        return {
+            "status": "error",
+            "message": handle_mcp_error(e, "get_single_document")
+        }
+
+def list_documents_advanced(collection_path: str, limit: int = 10, 
+                           order_by: str = "", order_direction: str = 'asc') -> dict:
+    """
+    MCP 호환: 고급 Firestore 문서 목록을 조회합니다.
+    새로 배포된 firestoreListDocuments 함수를 사용합니다.
+    
+    Args:
+        collection_path: 컬렉션 경로
+        limit: 조회할 문서 수 제한
+        order_by: 정렬 필드명 (빈 문자열이면 정렬 안함)
+        order_direction: 정렬 방향 ('asc' 또는 'desc')
+        
+    Returns:
+        dict: 문서 목록과 페이지네이션 정보
+    """
+    try:
+        # 🚨 0.1 Firebase MCP 호출 의무화 검증
+        if not validate_mcp_call("advanced_list", collection_path, {"limit": limit}):
+            log_operation("list_documents_advanced", collection_path, {"error": "MCP 호출 의무화 검증 실패"}, False)
+            return {
+                "status": "error",
+                "message": "데이터 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
+            }
+
+        # 🚨 0.2-2 새로운 MCP 함수 호출
+        call_params = {
+            "collection_path": collection_path,
+            "limit": limit,
+            "order_direction": order_direction
+        }
+        
+        # order_by가 제공된 경우에만 추가
+        if order_by and order_by.strip():
+            call_params["order_by"] = order_by
+            
+        response = firebase_client.list_documents(**call_params)
+        
+        # 🚨 0.2-3 호출 결과 확인 및 검증
+        is_valid = validate_response(response)
+        
+        if is_valid and response.get("success"):
+            data = response.get("data", {})
+            documents = data.get("documents", [])
+            
+            # 고급 문서 목록 포맷팅
+            formatted_result = _format_advanced_documents_data(documents, collection_path)
+            
+            log_operation("list_documents_advanced", collection_path, {
+                "limit": limit, 
+                "count": len(documents),
+                "has_more": data.get("hasMore", False)
+            }, True)
+            
+            return {
+                "status": "success",
+                "formatted_result": formatted_result,
+                "raw_data": response,
+                "documents": documents,
+                "total_count": len(documents),
+                "has_more": data.get("hasMore", False),
+                "next_page_token": data.get("nextPageToken"),
+                "query_info": data.get("query", {}),
+                "message": f"{collection_path} 컬렉션에서 {len(documents)}개 문서를 조회했습니다."
+            }
+        else:
+            return {
+                "status": "error",
+                "message": handle_mcp_error(Exception(f"고급 문서 목록 조회 실패: {response.get('message', '알 수 없는 오류')}"), "list_documents_advanced")
+            }
+            
+    except Exception as e:
+        log_operation("list_documents_advanced", collection_path, {"error": str(e)}, False)
+        return {
+            "status": "error",
+            "message": handle_mcp_error(e, "list_documents_advanced")
+        }
+
+def list_documents_with_filter(collection_path: str, limit: int = 10, 
+                              order_by: str = "", order_direction: str = 'asc',
+                              where_conditions: list = None) -> dict:
+    """
+    WHERE 조건을 지원하는 고급 Firestore 문서 목록 조회 (내부 사용)
+    
+    Args:
+        collection_path: 컬렉션 경로
+        limit: 조회할 문서 수 제한
+        order_by: 정렬 필드명
+        order_direction: 정렬 방향
+        where_conditions: WHERE 조건 배열
+        
+    Returns:
+        dict: 문서 목록과 페이지네이션 정보
+    """
+    try:
+        # 🚨 0.1 Firebase MCP 호출 의무화 검증
+        if not validate_mcp_call("advanced_list", collection_path, {"limit": limit}):
+            log_operation("list_documents_advanced", collection_path, {"error": "MCP 호출 의무화 검증 실패"}, False)
+            return {
+                "status": "error",
+                "message": "데이터 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
+            }
+
+        # 🚨 0.2-2 새로운 MCP 함수 호출
+        call_params = {
+            "collection_path": collection_path,
+            "limit": limit,
+            "order_direction": order_direction
+        }
+        
+        # order_by가 제공된 경우에만 추가
+        if order_by and order_by.strip():
+            call_params["order_by"] = order_by
+            
+        # where 조건이 제공된 경우에만 추가
+        if where_conditions:
+            call_params["where"] = where_conditions
+            
+        response = firebase_client.list_documents(**call_params)
+        
+        # 🚨 0.2-3 호출 결과 확인 및 검증
+        is_valid = validate_response(response)
+        
+        if is_valid and response.get("success"):
+            data = response.get("data", {})
+            documents = data.get("documents", [])
+            
+            # 고급 문서 목록 포맷팅
+            formatted_result = _format_advanced_documents_data(documents, collection_path)
+            
+            log_operation("list_documents_advanced", collection_path, {
+                "limit": limit, 
+                "count": len(documents),
+                "has_more": data.get("hasMore", False)
+            }, True)
+            
+            return {
+                "status": "success",
+                "formatted_result": formatted_result,
+                "raw_data": response,
+                "documents": documents,
+                "total_count": len(documents),
+                "has_more": data.get("hasMore", False),
+                "next_page_token": data.get("nextPageToken"),
+                "query_info": data.get("query", {}),
+                "message": f"{collection_path} 컬렉션에서 {len(documents)}개 문서를 조회했습니다."
+            }
+        else:
+            return {
+                "status": "error",
+                "message": handle_mcp_error(Exception(f"고급 문서 목록 조회 실패: {response.get('message', '알 수 없는 오류')}"), "list_documents_advanced")
+            }
+            
+    except Exception as e:
+        log_operation("list_documents_advanced", collection_path, {"error": str(e)}, False)
+        return {
+            "status": "error",
+            "message": handle_mcp_error(e, "list_documents_advanced")
+        }
+
+def _format_advanced_documents_data(documents: list, collection_name: str) -> str:
+    """
+    고급 문서 목록 데이터를 사용자 친화적으로 포맷팅합니다.
+    
+    Args:
+        documents: 문서 목록
+        collection_name: 컬렉션 이름
+        
+    Returns:
+        str: 포맷팅된 문자열
+    """
+    if not documents:
+        return f"📄 {collection_name} 컬렉션에 문서가 없습니다."
+    
+    formatted_text = f"📄 {collection_name} 컬렉션 고급 조회 결과:\n"
+    formatted_text += f"총 {len(documents)}개의 문서가 있습니다.\n\n"
+    
+    for i, doc in enumerate(documents, 1):
+        doc_data = doc.get("data", {})
+        doc_id = doc.get("id", "Unknown ID")
+        create_time = doc.get("createTime", "Unknown")
+        update_time = doc.get("updateTime", "Unknown")
+        
+        formatted_text += f"{i}. 📋 문서 ID: {doc_id}\n"
+        
+        # 컬렉션별 특화 포맷팅
+        if collection_name == "schedules":
+            title = doc_data.get('title', '제목 없음')
+            date = doc_data.get('date', '날짜 없음')
+            status = doc_data.get('status', '상태 없음')
+            formatted_text += f"   📅 제목: {title}\n"
+            formatted_text += f"   📅 날짜: {date}\n"
+            formatted_text += f"   📊 상태: {status}\n"
+        elif collection_name == "addressesJson":
+            description = doc_data.get('description', '설명 없음')
+            formatted_text += f"   🏠 주소: {description}\n"
+        else:
+            # 일반적인 필드들 표시
+            for key, value in list(doc_data.items())[:3]:  # 처음 3개 필드만
+                formatted_text += f"   📝 {key}: {value}\n"
+        
+        formatted_text += f"   🕐 생성: {create_time}\n"
+        formatted_text += f"   🕑 수정: {update_time}\n"
+        formatted_text += f"   {'-' * 40}\n\n"
+    
+    return formatted_text
 
 def _format_schedules_data(documents: list) -> str:
     """
