@@ -64,5 +64,5 @@ npm run deploy
 ## 🛠️ 기술 스택
 - Firebase Functions
 - Firebase Admin SDK  
-- Node.js 18
+- Node.js 22
 - CORS 지원 
