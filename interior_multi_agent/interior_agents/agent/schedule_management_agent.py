@@ -4,6 +4,7 @@ import time
 import json
 import re
 import logging
+from ..client.mcp_client import FirebaseMCPClient
 
 # 로깅 설정
 logger = logging.getLogger(__name__)
@@ -190,441 +191,91 @@ def _update_events_json(doc_id: str, updated_events: dict) -> dict:
 # 🎯 핵심 기능 5가지
 # ==============================================================================
 
-def register_new_schedule(address: str, date: str, work_type: str, memo: str = "") -> dict:
-    """새로운 스케줄을 등록합니다.
+client = FirebaseMCPClient()
+
+def register_new_schedule(address_id: str, date: str, description: str, category: str = "일반") -> Dict[str, Any]:
+    """
+    새로운 일정을 등록합니다.
     
     Args:
-        address: 현장 주소 또는 특수 카테고리 ("개인 일정", "하자보수", "고객 상담")
-        date: 스케줄 날짜 (다양한 형식 지원)
-        work_type: 작업 유형
-        memo: 추가 메모 (선택사항)
+        address_id: 현장 주소 ID
+        date: 일정 날짜 (YYYY-MM-DD)
+        description: 일정 설명
+        category: 일정 카테고리
         
     Returns:
-        dict: 등록 결과
+        Dict: 등록된 일정 정보
     """
-    try:
-        # 입력 검증
-        if not address or not date:
-            return {"status": "error", "message": "❌ 주소와 날짜는 필수 입력사항입니다.", "error_type": "invalid_input"}
-        
-        # 날짜 파싱
-        parsed_date = _parse_date_string(date)
-        
-        # 스케줄 메모 검증 (특수 카테고리인 경우)
-        final_memo = memo or work_type
-        if address in SPECIAL_SCHEDULE_CATEGORIES:
-            if not validate_schedule_memo(address, final_memo, ""):
-                return {"status": "error", "message": "❌ 유효하지 않은 메모 내용입니다.", "error_type": "invalid_memo"}
-        
-        # 문서 검색
-        found, doc_id, doc_data = _find_schedule_document(address)
-        
-        if not found:
-            # 특수 카테고리인 경우 안내 메시지 변경
-            if doc_data and doc_data.get("is_special_category"):
-                return {
-                    "status": "error",
-                    "message": f"❌ '{address}' 카테고리의 스케줄 문서가 존재하지 않습니다. 먼저 해당 카테고리를 생성해주세요.",
-                    "error_type": "category_not_found",
-                    "available_categories": list(SPECIAL_SCHEDULE_CATEGORIES)
-                }
-            else:
-                return {
-                    "status": "error",
-                    "message": f"❌ '{address}' 주소를 찾을 수 없습니다. 주소를 먼저 등록해주세요.",
-                    "error_type": "address_not_found",
-                    "hint": f"특수 카테고리를 사용하려면: {', '.join(SPECIAL_SCHEDULE_CATEGORIES)}"
-                }
-        
-        # 기존 eventsJson 파싱
-        events_json_str = doc_data.get("eventsJson", "{}")
-        try:
-            existing_events = json.loads(events_json_str)
-        except json.JSONDecodeError:
-            existing_events = {}
-        
-        # 새 이벤트 생성
-        event_key = f"{parsed_date}_{int(time.time() * 1000)}"
-        event_data = {
-            "title": "",
-            "status": "scheduled",
-            "memo": final_memo
-        }
-        
-        # 이벤트 추가
-        existing_events[event_key] = event_data
-        
-        # 문서 업데이트
-        update_result = _update_events_json(doc_id, existing_events)
-        
-        if update_result.get("status") == "success":
-            return {
-                "status": "success",
-                "message": f"✅ {address}에 {parsed_date} 스케줄이 등록되었습니다.",
-                "data": {
-                    "address": address,
-                    "date": parsed_date,
-                    "work_type": work_type,
-                    "memo": final_memo,
-                    "action": "registered"
-                }
-            }
-        else:
-            return {
-                "status": "error",
-                "message": f"❌ 스케줄 등록 중 오류가 발생했습니다: {update_result.get('message')}",
-                "error_type": "update_failed"
-            }
+    doc_data = {
+        "address_id": address_id,
+        "date": date,
+        "description": description,
+        "category": category,
+        "created_at": datetime.now().isoformat(),
+        "updated_at": datetime.now().isoformat()
+    }
+    
+    return client.create_document("schedules", doc_data)
 
-    except Exception as e:
-        error_msg = handle_mcp_error(e, f"스케줄 등록 중 오류 (address: {address}, date: {date})")
-        logger.error(error_msg)
-        return {"status": "error", "message": f"❌ 스케줄 등록 실패: {error_msg}", "error_type": "system_error"}
-
-def update_existing_schedule(address: str, date: str, new_memo: str, new_work_type: str = "") -> dict:
-    """기존 스케줄을 수정합니다.
+def update_existing_schedule(schedule_id: str, date: str = None, description: str = None, category: str = None) -> Dict[str, Any]:
+    """
+    기존 일정을 업데이트합니다.
     
     Args:
-        address: 현장 주소 또는 특수 카테고리 ("개인 일정", "하자보수", "고객 상담")
-        date: 수정할 스케줄 날짜
-        new_memo: 새로운 메모 내용
-        new_work_type: 새로운 작업 유형 (선택사항)
+        schedule_id: 일정 문서 ID
+        date: 새로운 날짜 (선택)
+        description: 새로운 설명 (선택)
+        category: 새로운 카테고리 (선택)
         
     Returns:
-        dict: 수정 결과
+        Dict: 업데이트된 일정 정보
     """
-    try:
-        # 입력 검증
-        if not address or not date or not new_memo:
-            return {"status": "error", "message": "❌ 주소, 날짜, 새 메모는 필수 입력사항입니다.", "error_type": "invalid_input"}
-        
-        # 날짜 파싱
-        parsed_date = _parse_date_string(date)
-        
-        # 메모 검증 (특수 카테고리인 경우)
-        if address in SPECIAL_SCHEDULE_CATEGORIES:
-            if not validate_schedule_memo(address, new_memo, ""):
-                return {"status": "error", "message": "❌ 유효하지 않은 메모 내용입니다.", "error_type": "invalid_memo"}
-        
-        # 문서 검색
-        found, doc_id, doc_data = _find_schedule_document(address)
-        
-        if not found:
-            # 특수 카테고리인 경우 안내 메시지 변경
-            if doc_data and doc_data.get("is_special_category"):
-                return {
-                    "status": "error",
-                    "message": f"❌ '{address}' 카테고리의 스케줄 문서가 존재하지 않습니다.",
-                    "error_type": "category_not_found",
-                    "available_categories": list(SPECIAL_SCHEDULE_CATEGORIES)
-                }
-            else:
-                return {
-                    "status": "error",
-                    "message": f"❌ '{address}' 주소를 찾을 수 없습니다.",
-                    "error_type": "address_not_found",
-                    "hint": f"특수 카테고리: {', '.join(SPECIAL_SCHEDULE_CATEGORIES)}"
-                }
-        
-        # 기존 eventsJson 파싱
-        events_json_str = doc_data.get("eventsJson", "{}")
-        try:
-            existing_events = json.loads(events_json_str)
-        except json.JSONDecodeError:
-            existing_events = {}
-        
-        # 해당 날짜의 이벤트 찾기
-        matching_keys = [key for key in existing_events.keys() if key.startswith(f"{parsed_date}_")]
-        
-        if not matching_keys:
-            return {
-                "status": "error",
-                "message": f"❌ {parsed_date}에 등록된 스케줄을 찾을 수 없습니다.",
-                "error_type": "date_not_found"
-            }
-        
-        # 첫 번째 매칭되는 이벤트 수정 (보통 하루에 하나의 주요 일정)
-        event_key = matching_keys[0]
-        existing_events[event_key]["memo"] = new_memo
-        
-        # 작업 유형이 제공된 경우 업데이트
-        if new_work_type:
-            # title 필드가 있다면 업데이트 (기존 구조 유지)
-            if "title" in existing_events[event_key]:
-                existing_events[event_key]["title"] = new_work_type
-        
-        # 문서 업데이트
-        update_result = _update_events_json(doc_id, existing_events)
-        
-        if update_result.get("status") == "success":
-            return {
-                "status": "success",
-                "message": f"✅ {address}의 {parsed_date} 스케줄이 수정되었습니다.",
-                "data": {
-                    "address": address,
-                    "date": parsed_date,
-                    "new_memo": new_memo,
-                    "new_work_type": new_work_type,
-                    "action": "updated"
-                }
-            }
-        else:
-            return {
-                "status": "error",
-                "message": f"❌ 스케줄 수정 중 오류가 발생했습니다: {update_result.get('message')}",
-                "error_type": "update_failed"
-            }
+    update_data = {}
+    if date is not None:
+        update_data["date"] = date
+    if description is not None:
+        update_data["description"] = description
+    if category is not None:
+        update_data["category"] = category
+    update_data["updated_at"] = datetime.now().isoformat()
+    
+    return client.update_document("schedules", schedule_id, update_data)
 
-    except Exception as e:
-        error_msg = handle_mcp_error(e, f"스케줄 수정 중 오류 (address: {address}, date: {date})")
-        logger.error(error_msg)
-        return {"status": "error", "message": f"❌ 스케줄 수정 실패: {error_msg}", "error_type": "system_error"}
-
-def delete_schedule_record(address: str, date: str) -> dict:
-    """특정 날짜의 스케줄을 삭제합니다.
+def delete_schedule_record(schedule_id: str) -> Dict[str, Any]:
+    """
+    일정을 삭제합니다.
     
     Args:
-        address: 현장 주소 또는 특수 카테고리 ("개인 일정", "하자보수", "고객 상담")
-        date: 삭제할 스케줄 날짜
+        schedule_id: 삭제할 일정 문서 ID
         
     Returns:
-        dict: 삭제 결과
+        Dict: 삭제 결과
     """
-    try:
-        # 입력 검증
-        if not address or not date:
-            return {"status": "error", "message": "❌ 주소와 날짜는 필수 입력사항입니다.", "error_type": "invalid_input"}
-        
-        # 날짜 파싱
-        parsed_date = _parse_date_string(date)
-        
-        # 문서 검색
-        found, doc_id, doc_data = _find_schedule_document(address)
-        
-        if not found:
-            # 특수 카테고리인 경우 안내 메시지 변경
-            if doc_data and doc_data.get("is_special_category"):
-                return {
-                    "status": "error",
-                    "message": f"❌ '{address}' 카테고리의 스케줄 문서가 존재하지 않습니다.",
-                    "error_type": "category_not_found",
-                    "available_categories": list(SPECIAL_SCHEDULE_CATEGORIES)
-                }
-            else:
-                return {
-                    "status": "error",
-                    "message": f"❌ '{address}' 주소를 찾을 수 없습니다.",
-                    "error_type": "address_not_found",
-                    "hint": f"특수 카테고리: {', '.join(SPECIAL_SCHEDULE_CATEGORIES)}"
-                }
-        
-        # 기존 eventsJson 파싱
-        events_json_str = doc_data.get("eventsJson", "{}")
-        try:
-            existing_events = json.loads(events_json_str)
-        except json.JSONDecodeError:
-            existing_events = {}
-        
-        # 해당 날짜의 이벤트 찾기 및 삭제
-        keys_to_delete = [key for key in existing_events.keys() if key.startswith(f"{parsed_date}_")]
-        
-        if not keys_to_delete:
-            return {
-                "status": "error", 
-                "message": f"❌ {parsed_date}에 삭제할 스케줄을 찾을 수 없습니다.",
-                "error_type": "date_not_found"
-            }
-        
-        # 이벤트 삭제
-        deleted_count = 0
-        for key in keys_to_delete:
-            del existing_events[key]
-            deleted_count += 1
-        
-        # 문서 업데이트
-        update_result = _update_events_json(doc_id, existing_events)
-        
-        if update_result.get("status") == "success":
-            return {
-                "status": "success",
-                "message": f"✅ {address}의 {parsed_date} 스케줄 {deleted_count}개가 삭제되었습니다.",
-                "data": {
-                    "address": address,
-                    "date": parsed_date,
-                    "deleted_count": deleted_count,
-                    "action": "deleted"
-                }
-            }
-        else:
-            return {
-                "status": "error",
-                "message": f"❌ 스케줄 삭제 중 오류가 발생했습니다: {update_result.get('message')}",
-                "error_type": "update_failed"
-            }
+    return client.delete_document("schedules", schedule_id)
 
-    except Exception as e:
-        error_msg = handle_mcp_error(e, f"스케줄 삭제 중 오류 (address: {address}, date: {date})")
-        logger.error(error_msg)
-        return {"status": "error", "message": f"❌ 스케줄 삭제 실패: {error_msg}", "error_type": "system_error"}
-
-def list_schedules_by_date(date: str) -> dict:
-    """특정 날짜의 모든 스케줄을 조회합니다.
+def list_schedules_by_date(date: str) -> List[Dict[str, Any]]:
+    """
+    특정 날짜의 모든 일정을 조회합니다.
     
     Args:
-        date: 조회할 날짜
+        date: 조회할 날짜 (YYYY-MM-DD)
         
     Returns:
-        dict: 조회 결과
+        List[Dict]: 일정 목록
     """
-    try:
-        # 입력 검증
-        if not date:
-            return {"status": "error", "message": "❌ 날짜는 필수 입력사항입니다.", "error_type": "invalid_input"}
-        
-        # 날짜 파싱
-        parsed_date = _parse_date_string(date)
-        
-        # MCP 규칙 검증
-        if not validate_mcp_call("query_collection", "schedules", {"date": parsed_date}):
-            return {"status": "error", "message": "❌ MCP 규칙 검증 실패", "error_type": "mcp_validation_failed"}
-        
-        # 모든 schedules 문서 조회
-        result = query_any_collection("schedules")
-        
-        if not validate_response(result) or result.get("status") != "success":
-            return {"status": "error", "message": "❌ 스케줄 컬렉션 조회 실패", "error_type": "query_failed"}
-        
-        documents = result.get("data", {}).get("documents", [])
-        schedules = []
-        
-        # 각 문서에서 해당 날짜의 이벤트 검색
-        for doc in documents:
-            doc_data = doc.get("data", {})
-            address = doc_data.get("address", "알 수 없는 주소")
-            events_json_str = doc_data.get("eventsJson", "{}")
-            
-            try:
-                events = json.loads(events_json_str)
-                
-                # 해당 날짜의 이벤트 찾기
-                for event_key, event_data in events.items():
-                    if event_key.startswith(f"{parsed_date}_"):
-                        schedule_info = {
-                            "address": address,
-                            "date": parsed_date,
-                            "memo": event_data.get("memo", ""),
-                            "status": event_data.get("status", "unknown"),
-                            "title": event_data.get("title", ""),
-                            "event_key": event_key
-                        }
-                        schedules.append(schedule_info)
-                        
-            except json.JSONDecodeError:
-                logger.warning(f"eventsJson 파싱 실패 (address: {address})")
-                continue
-        
-        # 결과 정렬 (주소별)
-        schedules.sort(key=lambda x: x["address"])
-        
-        log_operation("list_schedules_by_date", "success", {"date": parsed_date, "count": len(schedules)})
-        
-        return {
-            "status": "success",
-            "message": f"✅ {parsed_date}의 스케줄 {len(schedules)}개를 조회했습니다.",
-            "data": {
-                "date": parsed_date,
-                "schedules": schedules,
-                "count": len(schedules),
-                "action": "listed"
-            }
-        }
-        
-    except Exception as e:
-        error_msg = handle_mcp_error(e, f"스케줄 조회 중 오류 (date: {date})")
-        logger.error(error_msg)
-        return {"status": "error", "message": f"❌ 스케줄 조회 실패: {error_msg}", "error_type": "system_error"}
+    return client.query_documents("schedules", "date", "==", date)
 
-def list_schedules_by_address(address: str) -> dict:
-    """특정 주소/카테고리의 모든 스케줄을 조회합니다.
+def list_schedules_by_address(address_id: str) -> List[Dict[str, Any]]:
+    """
+    특정 주소의 모든 일정을 조회합니다.
     
     Args:
-        address: 조회할 주소 또는 특수 카테고리 ("개인 일정", "하자보수", "고객 상담")
+        address_id: 현장 주소 ID
         
     Returns:
-        dict: 조회 결과
+        List[Dict]: 일정 목록
     """
-    try:
-        # 입력 검증
-        if not address:
-            return {"status": "error", "message": "❌ 주소 또는 카테고리는 필수 입력사항입니다.", "error_type": "invalid_input"}
-        
-        # MCP 규칙 검증
-        if not validate_mcp_call("query_collection", "schedules", {"address": address}):
-            return {"status": "error", "message": "❌ MCP 규칙 검증 실패", "error_type": "mcp_validation_failed"}
-        
-        # 문서 검색
-        found, doc_id, doc_data = _find_schedule_document(address)
-        
-        if not found:
-            # 특수 카테고리인 경우 안내 메시지 변경
-            if doc_data and doc_data.get("is_special_category"):
-                return {
-                    "status": "error",
-                    "message": f"❌ '{address}' 카테고리의 스케줄 문서가 존재하지 않습니다.",
-                    "error_type": "category_not_found",
-                    "available_categories": list(SPECIAL_SCHEDULE_CATEGORIES)
-                }
-            else:
-                return {
-                    "status": "error",
-                    "message": f"❌ '{address}' 주소를 찾을 수 없습니다.",
-                    "error_type": "address_not_found",
-                    "hint": f"특수 카테고리: {', '.join(SPECIAL_SCHEDULE_CATEGORIES)}"
-                }
-        
-        # eventsJson 파싱
-        events_json_str = doc_data.get("eventsJson", "{}")
-        try:
-            events = json.loads(events_json_str)
-        except json.JSONDecodeError:
-            events = {}
-        
-        # 모든 이벤트를 날짜별로 정리
-        schedules = []
-        for event_key, event_data in events.items():
-            # 이벤트 키에서 날짜 추출 (YYYY-MM-DD_timestamp 형식)
-            date_part = event_key.split('_')[0] if '_' in event_key else "알 수 없는 날짜"
-            
-            schedule_info = {
-                "address": address,
-                "date": date_part,
-                "memo": event_data.get("memo", ""),
-                "status": event_data.get("status", "unknown"),
-                "title": event_data.get("title", ""),
-                "event_key": event_key
-            }
-            schedules.append(schedule_info)
-        
-        # 날짜순 정렬
-        schedules.sort(key=lambda x: x["date"])
-        
-        log_operation("list_schedules_by_address", "success", {"address": address, "count": len(schedules)})
-        
-        return {
-            "status": "success",
-            "message": f"✅ '{address}'의 스케줄 {len(schedules)}개를 조회했습니다.",
-            "data": {
-                "address": address,
-                "schedules": schedules,
-                "count": len(schedules),
-                "action": "listed_by_address"
-            }
-        }
-
-    except Exception as e:
-        error_msg = handle_mcp_error(e, f"주소별 스케줄 조회 중 오류 (address: {address})")
-        logger.error(error_msg)
-        return {"status": "error", "message": f"❌ 스케줄 조회 실패: {error_msg}", "error_type": "system_error"}
+    return client.query_documents("schedules", "address_id", "==", address_id)
 
 # ==============================================================================
 # 🔧 모듈 초기화 로깅

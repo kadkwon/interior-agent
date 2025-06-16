@@ -1,5 +1,5 @@
 """
-인테리어 멀티 에이전트 시스템
+인테리어 프로젝트 관리 에이전트 패키지
 """
 
 from .agent_main import root_agent

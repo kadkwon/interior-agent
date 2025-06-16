@@ -13,6 +13,7 @@ import json
 import logging
 from datetime import datetime
 from typing import Dict, Any, Optional, List, Tuple
+from .client.mcp_client import FirebaseMCPClient
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -31,7 +32,7 @@ def validate_mcp_call(operation_type: str, collection: str, data: Optional[Dict[
     0.1 Firebase MCP 호출 의무화 검증
     
     Args:
-        operation_type: 작업 유형 ('read', 'write', 'update', 'delete', 'data_query', 'collection_list')
+        operation_type: 작업 유형
         collection: Firebase 컬렉션 이름
         data: 처리할 데이터 (선택적)
     
@@ -45,24 +46,61 @@ def validate_mcp_call(operation_type: str, collection: str, data: Optional[Dict[
         
         # 지원되는 작업 유형 검증
         valid_operations = [
-            'read', 'write', 'update', 'delete',
-            'data_query', 'collection_list', 'project_info',
-            'address_register', 'address_update', 'address_delete',
-            'query_collection', 'list_collections',
-            'single_document', 'advanced_list'  # 새로운 MCP 호환 작업 유형
+            # Firestore 작업
+            'firestore_get_document',
+            'firestore_list_documents',
+            'firestore_query_collection',
+            'firestore_create_document',
+            'firestore_update_document',
+            'firestore_delete_document',
+            
+            # Storage 작업
+            'storage_list_files',
+            'storage_upload_file',
+            'storage_download_file',
+            'storage_delete_file',
+            
+            # Auth 작업
+            'auth_get_user',
+            'auth_create_user',
+            'auth_update_user',
+            'auth_delete_user',
+            
+            # 프로젝트 관리
+            'firebase_get_project_info',
+            'firebase_list_projects',
+            'firebase_deploy_functions'
         ]
+        
         if operation_type not in valid_operations:
             raise MCPValidationError(f"지원되지 않는 작업 유형: {operation_type}")
         
-        # 컬렉션 이름 검증 (문자열이 아닌 경우도 허용)
-        if isinstance(collection, str):
-            valid_collections = ['addressesJson', 'schedules', 'sites', 'payments']
-            if collection not in valid_collections:
-                logger.warning(f"알 수 없는 컬렉션: {collection}")
+        # 컬렉션 이름 검증
+        valid_collections = [
+            'addressesJson',
+            'schedules',
+            'sites',
+            'payments',
+            'project_info',
+            'firestore'
+        ]
         
-        # 쓰기 작업 시 데이터 검증
-        if operation_type in ['write', 'update'] and not data:
-            raise MCPValidationError("쓰기/업데이트 작업에는 데이터가 필요합니다.")
+        if isinstance(collection, str) and collection not in valid_collections:
+            logger.warning(f"알 수 없는 컬렉션: {collection}")
+        
+        # 데이터가 필요한 작업 검증
+        operations_requiring_data = [
+            'firestore_create_document',
+            'firestore_update_document',
+            'firestore_query_collection',
+            'storage_upload_file',
+            'storage_download_file',
+            'auth_create_user',
+            'auth_update_user'
+        ]
+        
+        if operation_type in operations_requiring_data and not data:
+            raise MCPValidationError(f"{operation_type} 작업에는 데이터가 필요합니다.")
         
         logger.info(f"MCP 호출 검증 통과: {operation_type} on {collection}")
         return True
@@ -83,17 +121,15 @@ def execute_mcp_sequence(func, *args, max_retries: int = 3, **kwargs) -> Tuple[b
     Returns:
         Tuple[bool, Any]: (성공 여부, 결과 데이터)
     """
+    client = FirebaseMCPClient()
+    
     for attempt in range(max_retries):
         try:
-            # 1. 사용자 요청 분석 및 필요한 Firebase 컬렉션 식별
             logger.info(f"MCP 호출 시도 {attempt + 1}/{max_retries}: {func.__name__}")
             
-            # 2. 적절한 Firebase MCP 함수 호출
             result = func(*args, **kwargs)
             
-            # 3. 호출 결과 확인 및 검증
             if validate_response(result):
-                # 4. 검증된 결과를 바탕으로 응답
                 logger.info(f"MCP 호출 성공: {func.__name__}")
                 return True, result
             else:
@@ -121,7 +157,6 @@ def handle_mcp_error(error: Exception, context: str = "") -> str:
     error_msg = f"MCP 오류 발생 {context}: {str(error)}"
     logger.error(error_msg)
     
-    # 오류 유형별 대응
     if isinstance(error, MCPValidationError):
         return f"데이터 검증 오류: {str(error)}"
     elif isinstance(error, MCPCallError):
@@ -129,83 +164,72 @@ def handle_mcp_error(error: Exception, context: str = "") -> str:
     else:
         return "예상치 못한 오류가 발생했습니다. 관리자에게 문의하세요."
 
-def safe_remove_data(collection: str, doc_id: str, data_type: str = "content") -> Dict[str, Any]:
+def safe_remove_data(collection: str, doc_id: str) -> Dict[str, Any]:
     """
     0.4 데이터 제거 처리 방식
     
     Args:
         collection: 컬렉션 이름
         doc_id: 문서 ID
-        data_type: 제거할 데이터 유형
     
     Returns:
         Dict[str, Any]: 업데이트할 데이터
     """
+    client = FirebaseMCPClient()
+    
     try:
         if collection == "schedules":
-            # schedules 컬렉션: eventsJson 필드를 빈 객체로 업데이트
-            return {"eventsJson": "{}"}
+            return client.update_document(collection, doc_id, {"eventsJson": "{}"})
         
         elif collection == "addressesJson":
-            # addressesJson 컬렉션: 주소 문서는 유지하되 상세 정보만 초기화
-            return {
-                "success": True,
-                "data": {
-                    "dataJson": "{}",
-                    "description": "",
-                    "updated_at": datetime.now().isoformat()
-                }
-            }
+            return client.update_document(collection, doc_id, {
+                "dataJson": "{}",
+                "description": "",
+                "updated_at": datetime.now().isoformat()
+            })
         
         else:
-            # 기타 컬렉션: 기본 초기화
-            return {
-                "data": "{}",
-                "status": "removed",
-                "updated_at": datetime.now().isoformat()
-            }
+            return client.delete_document(collection, doc_id)
             
     except Exception as e:
-        logger.error(f"안전한 데이터 제거 실패: {e}")
-        return {"error": "데이터 제거 중 오류 발생"}
+        logger.error(f"데이터 제거 실패: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "collection": collection,
+            "doc_id": doc_id
+        }
 
 def validate_schedule_memo(schedule_type: str, memo: str, title: str = "") -> bool:
     """
     0.5 특수 일정 메모 등록 규칙
     
     Args:
-        schedule_type: 일정 유형 ('개인일정', '하자보수', '고객상담')
+        schedule_type: 일정 유형
         memo: 메모 내용
-        title: 제목 (특수 일정의 경우 빈 문자열이어야 함)
+        title: 일정 제목
     
     Returns:
         bool: 검증 통과 여부
     """
     try:
-        special_types = ['개인일정', '하자보수', '고객상담', '고객 상담', '개인 일정', '하자 보수']
-        
-        if schedule_type in special_types:
-            # 특수 일정: memo 필드 필수, title은 빈 문자열
-            if not memo or memo.strip() == "":
-                raise MCPValidationError(f"{schedule_type}에는 memo 필드가 필수입니다.")
+        if not schedule_type or not memo:
+            return False
             
-            if title and title.strip() != "":
-                logger.warning(f"{schedule_type}의 title은 빈 문자열로 처리됩니다.")
-            
-            # 내용별 검증
-            if schedule_type in ['개인일정', '개인 일정']:
-                if len(memo) < 5:
-                    raise MCPValidationError("개인일정 memo는 최소 5자 이상이어야 합니다.")
-            
-            elif schedule_type in ['하자보수', '하자 보수']:
-                required_keywords = ['보수', '수리', '교체', '점검']
-                if not any(keyword in memo for keyword in required_keywords):
-                    logger.warning("하자보수 memo에 작업 내용을 명확히 기술하세요.")
-            
-            elif schedule_type in ['고객상담', '고객 상담']:
-                if '상담' not in memo:
-                    logger.warning("고객상담 memo에 상담 내용을 포함하세요.")
-        
+        if schedule_type == "payment":
+            required_fields = ["금액", "결제방법", "계약내용"]
+            for field in required_fields:
+                if field not in memo:
+                    return False
+                    
+        elif schedule_type == "visit":
+            if len(memo) < 10:
+                return False
+                
+        elif schedule_type == "contract":
+            if not title or "계약" not in title:
+                return False
+                
         return True
         
     except Exception as e:
@@ -225,36 +249,14 @@ def validate_response(response: Any) -> bool:
     try:
         if response is None:
             return False
-        
-        # 문자열 응답
-        if isinstance(response, str):
-            if response.strip() == "":
-                return False
-            # "error"가 포함되어도 정상 응답일 수 있으므로 제거
-        
-        # 딕셔너리 응답 (Firebase 응답 형식)
-        elif isinstance(response, dict):
-            # Firebase success 필드 확인
-            if "success" in response:
-                return response.get("success") == True
             
-            # 명시적 에러 상태 확인
-            if response.get("status") == "error":
-                return False
-            
-            # error 필드가 있으면 실패
-            if "error" in response and response.get("error"):
+        if isinstance(response, dict):
+            if "error" in response:
                 return False
                 
-            # 기본적으로 딕셔너리 응답은 성공으로 간주
-            return True
-        
-        # 리스트 응답
-        elif isinstance(response, list):
-            # 빈 리스트도 유효한 응답으로 간주
-            return True
-        
-        # 기타 응답도 성공으로 간주
+            if "success" in response and not response["success"]:
+                return False
+                
         return True
         
     except Exception as e:
@@ -263,53 +265,47 @@ def validate_response(response: Any) -> bool:
 
 def log_operation(operation: str, collection: str, result: Any, success: bool = True) -> None:
     """
-    작업 로깅 함수
+    작업 로깅
     
     Args:
-        operation: 수행된 작업
-        collection: 대상 컬렉션
+        operation: 작업 유형
+        collection: 컬렉션 이름
         result: 작업 결과
         success: 성공 여부
     """
-    timestamp = datetime.now().isoformat()
-    status = "SUCCESS" if success else "FAILED"
-    
-    log_entry = {
-        "timestamp": timestamp,
+    log_data = {
+        "timestamp": datetime.now().isoformat(),
         "operation": operation,
         "collection": collection,
-        "status": status,
-        "result_preview": str(result)[:100] if result else "None"
+        "success": success,
+        "result": result
     }
     
-    if success:
-        logger.info(f"작업 성공: {json.dumps(log_entry, ensure_ascii=False)}")
-    else:
-        logger.error(f"작업 실패: {json.dumps(log_entry, ensure_ascii=False)}")
+    logger.info(json.dumps(log_data, ensure_ascii=False, indent=2))
 
-# 사용 예시 및 테스트 함수들
 def test_mcp_rules():
-    """MCP 규칙 테스트 함수"""
-    print("🔥 Firebase MCP 규칙 테스트 시작")
+    """MCP 규칙 테스트"""
+    client = FirebaseMCPClient()
     
-    # 1. 검증 테스트
-    assert validate_mcp_call("read", "addressesJson") == True
-    assert validate_mcp_call("", "addressesJson") == False
+    # 1. 프로젝트 정보 조회 테스트
+    project_info = client.get_project_info()
+    assert validate_response(project_info)
     
-    # 2. 안전한 데이터 제거 테스트
-    schedule_remove = safe_remove_data("schedules", "test_doc")
-    assert schedule_remove["eventsJson"] == "{}"
+    # 2. 문서 생성 및 조회 테스트
+    test_data = {"test": "data"}
+    doc = client.add_document("test_collection", test_data)
+    assert validate_response(doc)
     
-    # 3. 특수 일정 메모 검증 테스트
-    assert validate_schedule_memo("개인일정", "다이슨드라이기 수리", "") == True
-    assert validate_schedule_memo("하자보수", "욕실 타일 들뜸 보수", "") == True
-    assert validate_schedule_memo("고객상담", "리모델링 상담 - 주방 확장", "") == True
+    # 3. 문서 업데이트 테스트
+    update_data = {"updated": True}
+    update = client.update_document("test_collection", doc["id"], update_data)
+    assert validate_response(update)
     
-    # 4. 응답 검증 테스트
-    assert validate_response({"name": "테스트", "address": "서울시"}) == True
-    assert validate_response({"error": "failed"}) == False
+    # 4. 문서 삭제 테스트
+    delete = client.delete_document("test_collection", doc["id"])
+    assert validate_response(delete)
     
-    print("✅ 모든 MCP 규칙 테스트 통과!")
+    logger.info("✅ MCP 규칙 테스트 통과")
 
 if __name__ == "__main__":
     test_mcp_rules() 
