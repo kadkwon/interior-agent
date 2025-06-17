@@ -1,171 +1,126 @@
 """
 주소 관리 에이전트
 
-addressesJson 컬렉션의 CRUD 작업을 담당하는 전용 에이전트입니다.
-단순하고 직접적인 주소 관리 행동들을 제공합니다.
+addresses 컬렉션의 CRUD 작업을 담당하는 전용 에이전트입니다.
 """
 
-from datetime import datetime
-from typing import Dict, List, Optional, Any
-import time
-import json
-from ..client.mcp_client import FirebaseMCPClient
+import logging
+from typing import Dict, Any
+import aiohttp
+from google.adk.sessions.in_memory_session_service import InMemorySessionService
+from google.adk.sessions.base_session_service import GetSessionConfig
+from datetime import datetime, timedelta
 
-client = FirebaseMCPClient()
+# 로깅 설정
+logger = logging.getLogger(__name__)
 
-def register_new_address(address: str, description: str = "", data_json: str = "{}") -> Dict[str, Any]:
-    """
-    새로운 현장 주소를 등록합니다.
+class AddressAgent:
+    """주소 관리 에이전트"""
     
-    Args:
-        address: 현장 주소
-        description: 주소 설명
-        data_json: 추가 데이터 (JSON 문자열)
+    def __init__(self):
+        self.session_service = InMemorySessionService()
         
-    Returns:
-        Dict: 등록된 주소 정보
-    """
-    doc_data = {
-        "address": address,
-        "description": description,
-        "dataJson": data_json,
-        "created_at": datetime.now().isoformat(),
-        "updated_at": datetime.now().isoformat()
-    }
+    def get_session_config(self):
+        """세션 설정 가져오기"""
+        now = datetime.now()
+        timestamp = now - timedelta(days=1)
+        return GetSessionConfig(
+            num_recent_events=50,
+            after_timestamp=timestamp.timestamp()
+        )
     
-    return client.create_document("addresses", doc_data)
-
-def update_existing_address(address_id: str, address: str = None, description: str = None, data_json: str = None) -> Dict[str, Any]:
-    """
-    기존 주소 정보를 업데이트합니다.
-    
-    Args:
-        address_id: 주소 문서 ID
-        address: 새로운 주소 (선택)
-        description: 새로운 설명 (선택)
-        data_json: 새로운 추가 데이터 (선택)
+    async def process_message(self, message: str, session_id: str, session: aiohttp.ClientSession) -> Dict[str, Any]:
+        """
+        주소 관련 메시지 처리
         
-    Returns:
-        Dict: 업데이트된 주소 정보
-    """
-    update_data = {}
-    if address is not None:
-        update_data["address"] = address
-    if description is not None:
-        update_data["description"] = description
-    if data_json is not None:
-        update_data["dataJson"] = data_json
-    update_data["updated_at"] = datetime.now().isoformat()
-    
-    return client.update_document("addresses", address_id, update_data)
-
-def delete_address_record(address_id: str) -> Dict[str, Any]:
-    """
-    주소 레코드를 삭제합니다.
-    
-    Args:
-        address_id: 삭제할 주소 문서 ID
-        
-    Returns:
-        Dict: 삭제 결과
-    """
-    return client.delete_document("addresses", address_id)
-
-def list_all_addresses(limit: int = 10) -> List[Dict[str, Any]]:
-    """
-    등록된 모든 주소 목록을 조회합니다.
-    
-    Args:
-        limit: 조회할 최대 문서 수
-        
-    Returns:
-        List[Dict]: 주소 목록
-    """
-    return client.list_documents("addresses", limit=limit)
-
-def search_addresses_by_keyword(keyword: str, field: str = "address", limit: int = 10) -> List[Dict[str, Any]]:
-    """
-    키워드로 주소를 검색합니다.
-    
-    Args:
-        keyword: 검색 키워드
-        field: 검색할 필드 이름
-        limit: 조회할 최대 문서 수
-        
-    Returns:
-        List[Dict]: 검색된 주소 목록
-    """
-    return client.search_documents("addresses", field, keyword, limit=limit)
-
-# =================
-# 헬퍼 함수들
-# =================
-
-def _get_document_by_id(doc_id: str) -> dict:
-    """문서 ID로 특정 문서 조회"""
-    try:
-        # addressesJson 컬렉션에서 모든 문서 조회 후 ID로 필터링
-        result = query_any_collection("addressesJson", limit=500)
-        if result.get("status") == "success":
-            # 응답 구조에 따라 documents 추출
-            documents = []
-            try:
-                if isinstance(result, dict):
-                    if result.get("status") == "success":
-                        documents = result.get("raw_data", {}).get("data", {}).get("documents", [])
-                    elif result.get("success"):
-                        documents = result.get("data", {}).get("documents", [])
-            except Exception:
-                # 추가 시도: data 직접 접근
-                documents = result.get("data", {}).get("documents", [])
+        Args:
+            message: 사용자 메시지
+            session_id: 세션 ID
+            session: HTTP 세션
             
-            for doc in documents:
-                doc_id_check = doc.get("id") or doc.get("_id") or doc.get("name", "").split("/")[-1]
-                if doc_id_check == doc_id:
-                    doc_data = doc.get("data", {})
-                    # dataJson 파싱
-                    data_json_str = doc_data.get("dataJson", "{}")
-                    try:
-                        data_json = json.loads(data_json_str) if data_json_str else {}
-                    except json.JSONDecodeError:
-                        data_json = {}
+        Returns:
+            Dict: 처리 결과
+        """
+        try:
+            # 세션 ID에서 사용자 ID 추출
+            parts = session_id.split(":")
+            user_id = parts[0] if len(parts) > 1 else "default-user"
+            chat_session_id = parts[1] if len(parts) > 1 else session_id
+            
+            logger.info(f"주소 처리 시작 - 메시지: {message}, 사용자 ID: {user_id}, 세션 ID: {chat_session_id}")
+            
+            # ADK 세션 가져오기 또는 생성
+            adk_session = await self.session_service.get_session(
+                app_name="interior_agent",
+                user_id=user_id,
+                session_id=chat_session_id,
+                config=self.get_session_config()
+            )
+            
+            if not adk_session:
+                adk_session = await self.session_service.create_session(
+                    app_name="interior_agent",
+                    user_id=user_id,
+                    session_id=chat_session_id
+                )
+            
+            # 주소 조회 요청
+            if "조회" in message or "검색" in message or "찾아" in message:
+                request_data = {
+                    "jsonrpc": "2.0",
+                    "method": "mcp_firebase_firestore_list_documents",
+                    "params": {
+                        "collection": "addresses",
+                        "userId": user_id,
+                        "sessionId": adk_session.id  # ADK 세션 ID 사용
+                    },
+                    "id": 1
+                }
+                
+                logger.info(f"Cloud Run 요청 - {request_data}")
+                
+                async with session.post(
+                    "https://firebase-mcp-638331849453.asia-northeast3.run.app/mcp",
+                    json=request_data,
+                    headers={"Content-Type": "application/json"}
+                ) as response:
+                    response_data = await response.json()
+                    logger.info(f"Cloud Run 응답 - {response_data}")
+                    
+                    if "error" in response_data:
+                        error_msg = f"주소 조회 중 오류가 발생했습니다: {response_data['error'].get('message', '알 수 없는 오류')}"
+                        logger.error(error_msg)
+                        return {
+                            "response": error_msg,
+                            "toolsUsed": ["mcp_firebase_firestore_list_documents"]
+                        }
+                        
+                    addresses = response_data.get("result", {}).get("documents", [])
+                    if not addresses:
+                        return {
+                            "response": "등록된 주소가 없습니다.",
+                            "toolsUsed": ["mcp_firebase_firestore_list_documents"]
+                        }
+                        
+                    address_list = "\n".join([
+                        f"- {addr.get('data', {}).get('address', '알 수 없는 주소')}"
+                        for addr in addresses
+                    ])
                     
                     return {
-                        "exists": True,
-                        "data": doc_data  # 원본 doc_data 반환 (description 포함)
+                        "response": f"조회된 주소 목록입니다:\n{address_list}",
+                        "toolsUsed": ["mcp_firebase_firestore_list_documents"]
                     }
-        
-        return {"exists": False}
-        
-    except Exception:
-        return {"exists": False}
-
-
-def _check_related_data(address: str) -> dict:
-    """관련 데이터 존재 여부 확인 (schedules 등)"""
-    try:
-        related_collections = []
-        
-        # schedules 컬렉션 확인
-        schedules_result = query_any_collection("schedules", limit=100)
-        if schedules_result.get("status") == "success":
-            documents = schedules_result.get("data", {}).get("documents", [])
             
-            for doc in documents:
-                doc_data = doc.get("data", {})
-                # schedules 컬렉션에서 주소는 description 필드에 있을 수 있음
-                doc_address = doc_data.get("description", "")
-                
-                if address and doc_address and (address in doc_address or doc_address in address):
-                    related_collections.append("schedules")
-                    break
-        
-        return {
-            "has_related": len(related_collections) > 0,
-            "collections": related_collections
-        }
-        
-    except Exception:
-        return {"has_related": False, "collections": []}
-
- 
+            # 일반 대화
+            return {
+                "response": "안녕하세요! 주소 관리를 도와드릴 수 있습니다. 주소 조회나 검색이 필요하시다면 말씀해 주세요.",
+                "toolsUsed": []
+            }
+            
+        except Exception as e:
+            logger.error(f"주소 처리 중 오류 발생: {e}", exc_info=True)
+            return {
+                "response": f"처리 중 오류가 발생했습니다: {str(e)}",
+                "toolsUsed": []
+            } 

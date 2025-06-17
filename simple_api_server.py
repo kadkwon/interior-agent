@@ -3,7 +3,6 @@
 - Firebase MCP 서버와 통합된 API 서버
 """
 
-import os
 import logging
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -37,33 +36,33 @@ class ChatRequest(BaseModel):
     """채팅 요청 모델"""
     message: str
     session_id: str = "default"
+    user_id: str = "default-user"
 
-@app.post("/chat")
+class ChatResponse(BaseModel):
+    """채팅 응답 모델"""
+    response: str
+    toolsUsed: list = []
+
+@app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
     """채팅 처리"""
     try:
         # Interior Agent로 메시지 전송
         response = await root_agent.process_message(
             message=request.message,
-            session_id=request.session_id
+            session_id=f"{request.user_id}:{request.session_id}"
         )
         
-        # 에러 체크
-        if "error" in response:
-            raise HTTPException(
-                status_code=500,
-                detail=response["error"]
-            )
-            
-        return response
+        return ChatResponse(
+            response=response.get("response", "응답을 처리할 수 없습니다."),
+            toolsUsed=response.get("toolsUsed", [])
+        )
         
-    except HTTPException as he:
-        raise he
     except Exception as e:
         logger.error(f"채팅 처리 중 오류 발생: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=str(e)
+        return ChatResponse(
+            response=f"처리 중 오류가 발생했습니다: {str(e)}",
+            toolsUsed=[]
         )
 
 @app.get("/health")
