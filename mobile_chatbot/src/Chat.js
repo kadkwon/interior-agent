@@ -30,13 +30,16 @@ const Chat = () => {
       // Add loading message
       setMessages(prev => [...prev, { type: 'loading', content: '...' }]);
 
-      // Call MCP server
-      const response = await fetch('https://firebase-mcp-638331849453.asia-northeast3.run.app/mcp', {
+      // Call Interior Agent
+      const response = await fetch('http://localhost:8000/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ message: inputMessage })
+        body: JSON.stringify({
+          message: inputMessage,
+          sessionId: 'user-123'  // 실제 구현시 사용자별 세션 ID 생성 필요
+        })
       });
 
       const data = await response.json();
@@ -46,7 +49,7 @@ const Chat = () => {
         const filtered = prev.filter(msg => msg.type !== 'loading');
         return [...filtered, {
           type: 'bot',
-          content: data.response,
+          content: data.error ? `오류: ${data.error}` : data.response,
           tools: data.toolsUsed
         }];
       });
@@ -56,7 +59,7 @@ const Chat = () => {
         const filtered = prev.filter(msg => msg.type !== 'loading');
         return [...filtered, {
           type: 'error',
-          content: '죄송합니다. 오류가 발생했습니다.'
+          content: '죄송합니다. 서버와 통신 중 오류가 발생했습니다.'
         }];
       });
     }

@@ -5,86 +5,79 @@
 
 import os
 import logging
-import asyncio
-from typing import Optional
-from google.adk.agents import Agent
-from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset
-from google.adk.tools.mcp_tool.mcp_session_manager import StdioConnectionParams
-from google.adk.runners import Runner
-from google.adk.sessions import InMemorySessionService
+import json
+import aiohttp
+from typing import Dict, Any
+from .agent.schedule_management_agent import *
+from .agent.address_management_agent import *
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# 서비스 계정 키 파일 경로
-SERVICE_ACCOUNT_KEY_PATH = os.path.join(os.path.dirname(__file__), '..', '..', 'interior-one-click-firebase-adminsdk-mpr08-94f76b4e50.json')
+# MCP 서버 URL
+MCP_SERVER_URL = "https://firebase-mcp-638331849453.asia-northeast3.run.app/mcp"
 
-async def create_agent():
-    """MCP 서버에서 도구를 가져와서 에이전트를 생성합니다."""
-    try:
-        # MCP 도구 초기화
-        server_params = {
-            'command': 'npx',
-            'args': ['-y', '@gannonh/firebase-mcp'],
-            'env': {
-                'SERVICE_ACCOUNT_KEY_PATH': SERVICE_ACCOUNT_KEY_PATH,
-                'FIREBASE_STORAGE_BUCKET': 'interior-one-click.appspot.com',
-                'MCP_TRANSPORT': 'http',
-                'MCP_HTTP_PORT': '8080',
-                'MCP_SERVER_URL': 'https://firebase-mcp-638331849453.asia-northeast3.run.app'
-            }
-        }
+class InteriorAgent:
+    """인테리어 프로젝트 관리 에이전트"""
+    
+    def __init__(self):
+        self.session = None
         
-        toolset = MCPToolset(connection_params=StdioConnectionParams(server_params=server_params))
+    async def initialize(self):
+        """HTTP 세션 초기화"""
+        if not self.session:
+            self.session = aiohttp.ClientSession()
+            
+    async def close(self):
+        """HTTP 세션 종료"""
+        if self.session:
+            await self.session.close()
+            self.session = None
+            
+    async def process_message(self, message: str, session_id: str = None) -> Dict[str, Any]:
+        """
+        사용자 메시지 처리
         
-        # 에이전트 생성
-        agent = Agent(
-            name='interior_agent',
-            model='gemini-2.0-pro',
-            instruction='인테리어 프로젝트 관리를 위한 AI 에이전트입니다.',
-            tools=toolset.tools
-        )
-        
-        return agent
-    except Exception as e:
-        logger.error(f"❌ Firebase MCP 에이전트 초기화 실패: {e}")
-        return None
-
-def init_agent():
-    """에이전트 초기화"""
-    try:
-        # 세션 서비스 초기화
-        session_service = InMemorySessionService()
-        
-        # 에이전트 생성 (동기적으로 실행)
-        agent = None
+        Args:
+            message: 사용자 메시지
+            session_id: 세션 ID (선택)
+            
+        Returns:
+            Dict: 처리 결과
+        """
         try:
-            loop = asyncio.new_event_loop()
-            agent = loop.run_until_complete(create_agent())
-            loop.close()
-        except RuntimeError:
-            # 이미 이벤트 루프가 실행 중인 경우
-            loop = asyncio.get_event_loop()
-            agent = loop.run_until_complete(create_agent())
+            await self.initialize()
             
-        if agent is None:
-            logger.error("❌ 에이전트 생성 실패")
-            return None
+            # 세션 ID가 없으면 기본값 사용
+            if not session_id:
+                session_id = "default-session"
             
-        # 러너 생성
-        runner = Runner(
-            app_name='interior_agent',
-            agent=agent,
-            session_service=session_service
-        )
-        
-        logger.info("✅ Firebase MCP 에이전트가 성공적으로 초기화되었습니다.")
-        return runner
-        
-    except Exception as e:
-        logger.error(f"❌ 에이전트를 사용할 수 없습니다: {e}")
-        return None
+            # MCP 서버로 요청 전송
+            async with self.session.post(
+                MCP_SERVER_URL,
+                json={
+                    "message": message,
+                    "sessionId": session_id
+                },
+                headers={"Content-Type": "application/json"}
+            ) as response:
+                if response.status == 200:
+                    return await response.json()
+                else:
+                    error_text = await response.text()
+                    logger.error(f"MCP 서버 오류: {error_text}")
+                    return {
+                        "error": "MCP 서버 오류",
+                        "details": error_text
+                    }
+                    
+        except Exception as e:
+            logger.error(f"메시지 처리 중 오류 발생: {e}")
+            return {
+                "error": "내부 서버 오류",
+                "details": str(e)
+            }
 
-# 에이전트 초기화
-root_runner = init_agent() 
+# 전역 에이전트 인스턴스
+root_agent = InteriorAgent() 

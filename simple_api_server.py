@@ -8,11 +8,10 @@ import logging
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from google.genai import types
-from interior_multi_agent.interior_agents.agent_main import root_runner, init_agent
+from interior_multi_agent.interior_agents.agent_main import root_agent
 
 # 환경 변수 설정
-PORT = 8505
+PORT = 8000
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -43,58 +42,42 @@ class ChatRequest(BaseModel):
 async def chat(request: ChatRequest):
     """채팅 처리"""
     try:
-        # 에이전트가 없으면 재초기화 시도
-        global root_runner
-        if root_runner is None:
-            logger.info("에이전트 재초기화 시도...")
-            root_runner = init_agent()
-            
-        if root_runner is None:
-            raise HTTPException(status_code=503, detail="에이전트를 사용할 수 없습니다.")
-            
-        # 메시지 생성
-        content = types.Content(
-            role='user',
-            parts=[types.Part(text=request.message)]
+        # Interior Agent로 메시지 전송
+        response = await root_agent.process_message(
+            message=request.message,
+            session_id=request.session_id
         )
         
-        # 에이전트 실행
-        events = root_runner.run(
-            session_id=request.session_id,
-            user_id="default",
-            new_message=content
-        )
-        
-        # 응답 수집
-        responses = []
-        for event in events:
-            if hasattr(event, 'message'):
-                responses.append(event.message.text)
-        
-        if not responses:
-            return {
-                "response": "죄송합니다. 응답을 생성할 수 없습니다.",
-                "agent_status": "error"
-            }
+        # 에러 체크
+        if "error" in response:
+            raise HTTPException(
+                status_code=500,
+                detail=response["error"]
+            )
             
-        return {
-            "response": " ".join(responses),
-            "agent_status": "ready"
-        }
+        return response
+        
+    except HTTPException as he:
+        raise he
     except Exception as e:
         logger.error(f"채팅 처리 중 오류 발생: {e}")
-        return {
-            "response": f"오류가 발생했습니다: {str(e)}",
-            "agent_status": "error"
-        }
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
 
 @app.get("/health")
 async def health_check():
     """상태 확인"""
     return {
         "status": "healthy",
-        "agent_available": root_runner is not None
+        "version": "1.0.0"
     }
+
+# 서버 종료 시 세션 정리
+@app.on_event("shutdown")
+async def shutdown_event():
+    await root_agent.close()
 
 if __name__ == "__main__":
     import uvicorn
