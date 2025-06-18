@@ -1,16 +1,52 @@
 """
-FastAPI Firebase MCP 프록시 서버 - React 챗봇과 Firebase MCP 서버 간 연결만 담당
+FastAPI Firebase MCP 프록시 서버 - ADK 루트 에이전트 연결
 """
 
 import logging
 import uuid
 import json
 import aiohttp
+import asyncio
+import sys
+import os
 from datetime import datetime
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
+
+# .env 파일 로드
+from dotenv import load_dotenv
+load_dotenv()
+
+# 환경변수 확인 및 설정
+google_api_key = os.getenv('GOOGLE_API_KEY')
+use_vertex_ai = os.getenv('GOOGLE_GENAI_USE_VERTEXAI', 'FALSE').upper() == 'TRUE'
+
+if google_api_key:
+    print(f"✅ Google API Key 로드 성공: {google_api_key[:10]}...")
+    # 환경변수로 설정하여 ADK가 인식할 수 있도록 함
+    os.environ['GOOGLE_API_KEY'] = google_api_key
+else:
+    print("⚠️ Google API Key가 .env 파일에 없습니다.")
+
+print(f"🔧 Vertex AI 사용: {use_vertex_ai}")
+
+# 현재 디렉토리를 Python 경로에 추가
+sys.path.append(os.path.dirname(__file__))
+
+# ADK 루트 에이전트 임포트
+try:
+    from interior_multi_agent.interior_agents import root_agent
+    from google.adk.runners import Runner
+    from google.adk.sessions import InMemorySessionService
+    from google.genai import types
+    ADK_AGENT_AVAILABLE = True
+    print("✅ ADK 루트 에이전트 임포트 성공")
+except ImportError as e:
+    print(f"⚠️ ADK 루트 에이전트 임포트 실패: {e}")
+    print("기본 Firebase MCP 클라이언트를 사용합니다.")
+    ADK_AGENT_AVAILABLE = False
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -218,9 +254,113 @@ async def health_check():
 
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
-    """채팅 엔드포인트 - 리액트 챗봇과 통신"""
+    """채팅 엔드포인트 - ADK 루트 에이전트 또는 기본 응답"""
     try:
-        # 기본적인 인테리어 상담 응답
+        if ADK_AGENT_AVAILABLE:
+            # ADK 루트 에이전트 사용 (v1.0.0 완전 비동기 방식)
+            try:
+                print(f"📤 ADK v1.0.0 완전 비동기 방식으로 메시지 전송: {request.message}")
+                
+                # ADK v1.0.0 세션 서비스 및 Runner 설정
+                session_service = InMemorySessionService()
+                runner = Runner(
+                    agent=root_agent,
+                    app_name="interior_chatbot",
+                    session_service=session_service
+                )
+                
+                # 세션 생성 (완전 비동기)
+                app_name = "interior_chatbot"
+                user_id = request.session_id or f"user_{uuid.uuid4()}"
+                session_id = f"session_{uuid.uuid4()}"
+                
+                # 비동기 세션 생성 - await 사용
+                session = await session_service.create_session(
+                    app_name=app_name,
+                    user_id=user_id,
+                    session_id=session_id
+                )
+                print(f"✅ 세션 생성 완료: {session_id}")
+                
+                # 메시지 생성
+                content = types.Content(
+                    role='user', 
+                    parts=[types.Part(text=request.message)]
+                )
+                
+                # ADK Runner 비동기 실행
+                print(f"🔄 ADK Runner 비동기 실행 시작...")
+                events = []
+                async for event in runner.run_async(
+                    user_id=user_id,
+                    session_id=session_id,
+                    new_message=content
+                ):
+                    events.append(event)
+                    print(f"📨 이벤트 수신: {type(event).__name__}")
+                
+                print(f"✅ 총 {len(events)}개의 이벤트 수신 완료")
+                
+                # 최종 응답 추출 (개선된 로직)
+                response_text = "ADK 에이전트가 응답을 생성했지만 텍스트를 추출할 수 없습니다."
+                
+                for event in reversed(events):  # 마지막 이벤트부터 확인
+                    try:
+                        # Event 속성들을 체크하여 응답 텍스트 추출
+                        if hasattr(event, 'content'):
+                            if hasattr(event.content, 'parts') and event.content.parts:
+                                if hasattr(event.content.parts[0], 'text'):
+                                    response_text = event.content.parts[0].text
+                                    print(f"✅ 응답 텍스트 추출 성공: {response_text[:100]}...")
+                                    break
+                            elif hasattr(event.content, 'text'):
+                                response_text = event.content.text
+                                print(f"✅ 응답 텍스트 추출 성공: {response_text[:100]}...")
+                                break
+                        
+                        # 다른 가능한 응답 필드들 체크
+                        if hasattr(event, 'text'):
+                            response_text = event.text
+                            print(f"✅ 응답 텍스트 추출 성공: {response_text[:100]}...")
+                            break
+                            
+                        # 이벤트 전체를 문자열로 변환하여 의미있는 내용 찾기
+                        event_str = str(event)
+                        if len(event_str) > 50 and "Event" not in event_str:
+                            response_text = event_str
+                            print(f"✅ 이벤트 문자열 추출: {response_text[:100]}...")
+                            break
+                            
+                    except Exception as e:
+                        print(f"⚠️ 이벤트 처리 중 오류: {e}")
+                        continue
+                
+                print(f"📥 ADK v1.0.0 최종 응답: {response_text[:200]}...")
+                
+                # Firebase 도구 사용 여부 확인
+                firebase_tools_used = []
+                if "firestore" in response_text.lower() or "firebase" in response_text.lower():
+                    firebase_tools_used.append("adk_root_agent_with_firebase")
+                else:
+                    firebase_tools_used.append("adk_root_agent")
+                
+                return ChatResponse(
+                    response=response_text,
+                    timestamp=datetime.now().isoformat(),
+                    agent_status="adk_agent_active",
+                    firebase_tools_used=firebase_tools_used
+                )
+                
+            except Exception as e:
+                logger.error(f"ADK v1.0.0 비동기 실행 오류: {e}")
+                print(f"❌ ADK v1.0.0 에러 상세: {type(e).__name__}: {e}")
+                import traceback
+                print(f"🔍 전체 스택 트레이스:")
+                traceback.print_exc()
+                # 에러 시 기본 응답으로 폴백
+                pass
+        
+        # 기본 응답 로직 (ADK 에이전트 사용 불가능하거나 에러 시)
         user_message = request.message.lower()
         
         # Firebase에서 데이터 조회 시도
@@ -237,7 +377,7 @@ async def chat_endpoint(request: ChatRequest):
         
         # 간단한 인테리어 응답 로직
         if any(keyword in user_message for keyword in ["안녕", "hello", "hi"]):
-            response = "안녕하세요! 인테리어 전문 에이전트입니다. 인테리어 디자인, 시공, 예산 등 무엇이든 물어보세요!"
+            response = "안녕하세요! 인테리어 전문 에이전트입니다. ADK 시스템과 연결하여 더 전문적인 서비스를 제공합니다!"
         elif any(keyword in user_message for keyword in ["예산", "비용", "가격"]):
             response = "인테리어 예산은 공간 크기, 원하는 스타일, 자재 등에 따라 달라집니다. 구체적인 정보를 알려주시면 더 정확한 견적을 도와드릴 수 있어요!"
         elif any(keyword in user_message for keyword in ["디자인", "스타일", "컨셉"]):
@@ -246,13 +386,17 @@ async def chat_endpoint(request: ChatRequest):
             response = "색상 선택은 공간의 분위기를 결정하는 중요한 요소입니다. 밝은 색상은 공간을 넓어 보이게 하고, 어두운 색상은 아늑한 느낌을 줍니다."
         elif any(keyword in user_message for keyword in ["시공", "공사", "리모델링"]):
             response = "시공 과정에서는 전기, 배관, 타일, 도배 등 순서가 중요합니다. 전문 업체와 상담하여 체계적으로 진행하시는 것을 추천드려요."
+        elif any(keyword in user_message for keyword in ["주소", "위치", "address", "location"]):
+            response = "주소 관리 기능이 필요하시군요! ADK 에이전트가 활성화되면 Firebase를 통한 주소 저장 및 관리가 가능합니다."
         else:
             response = f"'{request.message}'에 대해 더 구체적으로 알려주시면 더 정확한 답변을 드릴 수 있어요. 인테리어 관련 궁금한 점이 있으시면 언제든 물어보세요!"
+        
+        agent_status = "fallback_mode" if not ADK_AGENT_AVAILABLE else "basic_mode"
         
         return ChatResponse(
             response=response,
             timestamp=datetime.now().isoformat(),
-            agent_status="active",
+            agent_status=agent_status,
             firebase_tools_used=firebase_tools_used
         )
         
