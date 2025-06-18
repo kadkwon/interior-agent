@@ -36,6 +36,18 @@ class ToolCallRequest(BaseModel):
     tool_name: str
     arguments: Dict[str, Any]
 
+class ChatRequest(BaseModel):
+    """채팅 요청"""
+    message: str
+    session_id: Optional[str] = None
+
+class ChatResponse(BaseModel):
+    """채팅 응답"""
+    response: str
+    timestamp: str
+    agent_status: str
+    firebase_tools_used: List[str] = []
+
 class FirebaseMCPClient:
     """Firebase MCP 서버와 통신하는 클라이언트"""
     
@@ -203,6 +215,50 @@ async def health_check():
             "error": str(e),
             "timestamp": datetime.now().isoformat()
         }
+
+@app.post("/chat")
+async def chat_endpoint(request: ChatRequest):
+    """채팅 엔드포인트 - 리액트 챗봇과 통신"""
+    try:
+        # 기본적인 인테리어 상담 응답
+        user_message = request.message.lower()
+        
+        # Firebase에서 데이터 조회 시도
+        firebase_tools_used = []
+        
+        # 컬렉션 목록 조회 시도
+        try:
+            async with FirebaseMCPClient(FIREBASE_MCP_URL) as client:
+                collections_result = await client.call_tool("firestore_list_collections", {"random_string": "test"})
+                if "error" not in collections_result:
+                    firebase_tools_used.append("firestore_list_collections")
+        except Exception as e:
+            logger.warning(f"Firebase 연결 실패: {e}")
+        
+        # 간단한 인테리어 응답 로직
+        if any(keyword in user_message for keyword in ["안녕", "hello", "hi"]):
+            response = "안녕하세요! 인테리어 전문 에이전트입니다. 인테리어 디자인, 시공, 예산 등 무엇이든 물어보세요!"
+        elif any(keyword in user_message for keyword in ["예산", "비용", "가격"]):
+            response = "인테리어 예산은 공간 크기, 원하는 스타일, 자재 등에 따라 달라집니다. 구체적인 정보를 알려주시면 더 정확한 견적을 도와드릴 수 있어요!"
+        elif any(keyword in user_message for keyword in ["디자인", "스타일", "컨셉"]):
+            response = "어떤 스타일을 선호하시나요? 모던, 클래식, 미니멀, 북유럽 등 다양한 스타일이 있습니다. 공간의 용도와 개인 취향을 고려해서 추천해드릴게요!"
+        elif any(keyword in user_message for keyword in ["색상", "컬러", "색깔"]):
+            response = "색상 선택은 공간의 분위기를 결정하는 중요한 요소입니다. 밝은 색상은 공간을 넓어 보이게 하고, 어두운 색상은 아늑한 느낌을 줍니다."
+        elif any(keyword in user_message for keyword in ["시공", "공사", "리모델링"]):
+            response = "시공 과정에서는 전기, 배관, 타일, 도배 등 순서가 중요합니다. 전문 업체와 상담하여 체계적으로 진행하시는 것을 추천드려요."
+        else:
+            response = f"'{request.message}'에 대해 더 구체적으로 알려주시면 더 정확한 답변을 드릴 수 있어요. 인테리어 관련 궁금한 점이 있으시면 언제든 물어보세요!"
+        
+        return ChatResponse(
+            response=response,
+            timestamp=datetime.now().isoformat(),
+            agent_status="active",
+            firebase_tools_used=firebase_tools_used
+        )
+        
+    except Exception as e:
+        logger.error(f"채팅 처리 오류: {e}")
+        raise HTTPException(status_code=500, detail=f"채팅 처리 중 오류가 발생했습니다: {str(e)}")
 
 @app.post("/firebase/tool")
 async def call_firebase_tool(request: ToolCallRequest):
