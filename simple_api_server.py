@@ -1,27 +1,22 @@
 """
-인테리어 프로젝트 API 서버
-- Firebase MCP 서버와 통합된 API 서버
+FastAPI 서버
 """
 
 import logging
+import uuid
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from interior_multi_agent.interior_agents.agent_main import root_agent
+from typing import Optional, Dict, Any, List
 
-# 환경 변수 설정
-PORT = 8000
+from interior_multi_agent.interior_agents import root_agent
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # FastAPI 앱 생성
-app = FastAPI(
-    title="인테리어 프로젝트 API",
-    description="Firebase MCP 서버와 통합된 인테리어 프로젝트 관리 API",
-    version="1.0.0"
-)
+app = FastAPI()
 
 # CORS 설정
 app.add_middleware(
@@ -33,51 +28,53 @@ app.add_middleware(
 )
 
 class ChatRequest(BaseModel):
-    """채팅 요청 모델"""
+    """채팅 요청"""
     message: str
-    session_id: str = "default"
-    user_id: str = "default-user"
+    user_id: Optional[str] = None
+    session_id: Optional[str] = None
 
 class ChatResponse(BaseModel):
-    """채팅 응답 모델"""
+    """채팅 응답"""
     response: str
-    toolsUsed: list = []
+    tools_used: List[Dict[str, Any]] = []
 
-@app.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest):
-    """채팅 처리"""
+@app.post("/chat")
+async def chat(request: ChatRequest) -> ChatResponse:
+    """
+    채팅 엔드포인트
+    
+    Args:
+        request: 채팅 요청
+        
+    Returns:
+        ChatResponse: 채팅 응답
+    """
     try:
-        # Interior Agent로 메시지 전송
-        response = await root_agent.process_message(
-            message=request.message,
-            session_id=f"{request.user_id}:{request.session_id}"
-        )
+        # 세션 ID가 없으면 생성
+        if not request.session_id:
+            request.session_id = str(uuid.uuid4())
+            
+        # 사용자 ID가 없으면 기본값 사용
+        if not request.user_id:
+            request.user_id = "default-user"
+            
+        # 메시지 처리
+        result = await root_agent.process_message(request.message)
         
         return ChatResponse(
-            response=response.get("response", "응답을 처리할 수 없습니다."),
-            toolsUsed=response.get("toolsUsed", [])
+            response=result["response"],
+            tools_used=result.get("toolsUsed", [])
         )
         
     except Exception as e:
-        logger.error(f"채팅 처리 중 오류 발생: {e}")
-        return ChatResponse(
-            response=f"처리 중 오류가 발생했습니다: {str(e)}",
-            toolsUsed=[]
-        )
+        logger.error(f"처리 중 오류 발생: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/health")
-async def health_check():
-    """상태 확인"""
-    return {
-        "status": "healthy",
-        "version": "1.0.0"
-    }
-
-# 서버 종료 시 세션 정리
 @app.on_event("shutdown")
 async def shutdown_event():
+    """서버 종료 시 정리 작업"""
     await root_agent.close()
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=PORT) 
+    uvicorn.run(app, host="0.0.0.0", port=8000) 
