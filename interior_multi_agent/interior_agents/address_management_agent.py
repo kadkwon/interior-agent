@@ -1,20 +1,20 @@
 """
-주소 관리 전용 에이전트 - Firebase MCP 원격 서버 연결 (ADK web 호환)
+주소 관리 전용 에이전트 - Firebase MCP 원격 서버 연결 (Streamable HTTP)
 """
 
 from google.adk.agents import Agent
-from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, SseServerParams
+from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset
 
 def create_address_agent():
-    """주소 관리 전용 에이전트 생성 - ADK web 호환 버전"""
+    """주소 관리 전용 에이전트 생성 - Streamable HTTP 방식"""
     try:
         print("Firebase MCP 원격 서버에 연결 시도 중...")
         
-        # Firebase MCP 원격 서버에 연결 (ADK web 호환 방식)
-        mcp_toolset = MCPToolset(
-            connection_params=SseServerParams(
-                url="https://firebase-mcp-638331849453.asia-northeast3.run.app/mcp"
-            )
+        # Firebase MCP 원격 서버에 연결 (Streamable HTTP 방식)
+        mcp_toolset = MCPToolset.from_server(
+            connection_params={
+                "url": "https://firebase-mcp-638331849453.asia-northeast3.run.app/mcp"
+            }
         )
         
         print("Firebase MCP 도구셋 생성 완료")
@@ -76,8 +76,8 @@ def create_address_agent():
         # 기본 에이전트로 폴백
         return Agent(
             model='gemini-2.5-flash-preview-05-20',
-            name='address_manager_basic',
-            description="주소 정보를 관리하는 기본 에이전트입니다.",
+            name='address_manager_fallback',
+            description="주소 정보를 관리하는 폴백 에이전트입니다.",
             instruction='''주소 관리 전문 AI 어시스턴트입니다. 
 
 현재 Firebase 원격 서버 연결에 문제가 있어 기본 모드로 동작합니다.
