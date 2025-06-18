@@ -112,6 +112,12 @@
   line-height: 1.5;
 }
 
+.message-text {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  line-height: 1.6;
+}
+
 .message.user {
   align-self: flex-end;
   border: 1px solid #000;

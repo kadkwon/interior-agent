@@ -155,7 +155,14 @@ const Chat = () => {
         {messages.map((message, index) => (
           <div key={index} className={`message ${message.type}`}>
             <div className="message-content">
-              {message.content}
+              <div className="message-text">
+                {message.content.split('\n').map((line, index) => (
+                  <React.Fragment key={index}>
+                    {line}
+                    {index < message.content.split('\n').length - 1 && <br />}
+                  </React.Fragment>
+                ))}
+              </div>
               {message.firebase_tools_used && message.firebase_tools_used.length > 0 && (
                 <div className="tools-used">
                   <span className="tools-label">🔧 사용된 도구:</span>

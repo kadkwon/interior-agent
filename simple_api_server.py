@@ -276,8 +276,8 @@ class InteriorAgent:
                 result = await client.call_tool(
                     "firestore_add_document",
                     {
-                        "collection": "addresses",
-                        "data": address_data
+                                            "collection": "addressesJson",
+                    "data": address_data
                     }
                 )
             
@@ -290,17 +290,18 @@ class InteriorAgent:
     async def _handle_address_list(self) -> Dict[str, Any]:
         """주소 목록 조회"""
         try:
-            # 임시 테스트용 가짜 데이터
-            return {
-                "result": {
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": '{"documents":[{"id":"test1","data":{"address":"테스트 주소 1"}},{"id":"test2","data":{"address":"테스트 주소 2"}}]}'
-                        }
-                    ]
-                }
-            }
+            logger.info("Firebase에서 실제 주소 목록을 조회합니다...")
+            async with FirebaseMCPClient(FIREBASE_MCP_URL) as client:
+                result = await client.call_tool(
+                    "firestore_list_documents",
+                    {
+                        "collection": "addressesJson",
+                        "limit": 20
+                    }
+                )
+            
+            logger.info(f"주소 목록 조회 결과: {result}")
+            return result
             
         except Exception as e:
             logger.error(f"주소 조회 중 오류: {e}", exc_info=True)
@@ -330,46 +331,77 @@ class InteriorAgent:
         
         elif action == "주소 목록 조회":
             try:
+                logger.info(f"주소 목록 응답 생성 중... firebase_result: {firebase_result}")
+                
                 # Firebase MCP 응답 구조: result.content[0].text에 JSON 문자열
                 if firebase_result.get("result") and firebase_result["result"].get("content"):
                     content = firebase_result["result"]["content"][0]
                     if content.get("type") == "text":
                         # text 필드의 JSON 문자열을 파싱
                         data_str = content.get("text", "{}")
-                        firestore_data = json.loads(data_str)
+                        logger.info(f"파싱할 데이터: {data_str}")
+                        
+                        try:
+                            firestore_data = json.loads(data_str)
+                        except json.JSONDecodeError as e:
+                            logger.error(f"JSON 파싱 실패: {e}, 데이터: {data_str}")
+                            return "데이터 파싱 중 오류가 발생했습니다."
                         
                         documents = firestore_data.get("documents", [])
+                        logger.info(f"찾은 문서 수: {len(documents) if isinstance(documents, list) else 'N/A'}")
+                        
                         if documents and isinstance(documents, list):
                             address_list = []
                             # 안전한 슬라이싱
-                            doc_count = min(len(documents), 5)
+                            doc_count = min(len(documents), 10)
                             for i in range(doc_count):
                                 doc = documents[i]
                                 if isinstance(doc, dict):
+                                    doc_id = doc.get("id", "")
                                     doc_data = doc.get("data", {})
                                     if isinstance(doc_data, dict):
                                         address = doc_data.get("address", "")
                                         description = doc_data.get("description", "")
                                         raw_message = doc_data.get("raw_message", "")
+                                        name = doc_data.get("name", "")
+                                        user_id = doc_data.get("user_id", "")
+                                        timestamp = doc_data.get("timestamp", "")
                                         
-                                        # 표시할 주소 정보 결정
-                                        display_text = address or description or raw_message or "정보 없음"
-                                        address_list.append(f"- {display_text}")
+                                        # 표시할 주소 정보 결정 (우선순위: name > address > description > raw_message)
+                                        display_text = name or address or description or raw_message or f"주소 ID: {doc_id}"
+                                        
+                                        # 타임스탬프가 있으면 날짜 추가
+                                        date_info = ""
+                                        if timestamp:
+                                            try:
+                                                from datetime import datetime
+                                                dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                                                date_info = f" ({dt.strftime('%Y-%m-%d')})"
+                                            except:
+                                                pass
+                                        
+                                        address_list.append(f"- {display_text}{date_info}")
                             
                             if address_list:
                                 return f"""
-📋 **등록된 주소 목록:**
+📋 **등록된 주소 목록 ({len(address_list)}개):**
 
 {chr(10).join(address_list)}
 
 어떤 주소의 인테리어 계획을 진행하시겠습니까?
 """
+                            else:
+                                return "아직 등록된 주소가 없습니다. 먼저 시공할 주소를 알려주세요!"
                         else:
                             return "아직 등록된 주소가 없습니다. 먼저 시공할 주소를 알려주세요!"
+                    else:
+                        logger.error(f"잘못된 응답 타입: {content.get('type')}")
+                        return "데이터 형식 오류가 발생했습니다."
                 else:
+                    logger.error("Firebase 응답에 필요한 데이터가 없습니다.")
                     return "주소 목록을 불러오는 중 문제가 발생했습니다."
-            except (json.JSONDecodeError, KeyError, IndexError) as e:
-                logger.error(f"주소 목록 파싱 오류: {e}")
+            except Exception as e:
+                logger.error(f"주소 목록 파싱 오류: {e}", exc_info=True)
                 return f"주소 목록 처리 중 오류가 발생했습니다: {str(e)}"
         
         return f"{action}이 완료되었습니다."
@@ -510,11 +542,11 @@ async def save_address(address_data: Dict[str, Any]):
             result = await client.call_tool(
                 "firestore_add_document",
                 {
-                    "collection": "addresses",
-                    "data": {
-                        **address_data,
-                        "timestamp": datetime.now().isoformat()
-                    }
+                                    "collection": "addressesJson",
+                "data": {
+                    **address_data,
+                    "timestamp": datetime.now().isoformat()
+                }
                 }
             )
         return result
@@ -528,7 +560,7 @@ async def get_addresses():
         async with FirebaseMCPClient(FIREBASE_MCP_URL) as client:
             result = await client.call_tool(
                 "firestore_list_documents",
-                {"collection": "addresses", "limit": 20}
+                {"collection": "addressesJson", "limit": 20}
             )
         return result
     except Exception as e:

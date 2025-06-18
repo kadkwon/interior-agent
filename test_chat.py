@@ -7,7 +7,7 @@ async def test_chat():
         # 테스트 1: 일반 인사
         print("\n1. 테스트: '안녕하세요'")
         async with session.post(
-            "http://localhost:8000/chat",
+            "http://localhost:8505/chat",
             json={
                 "message": "안녕하세요",
                 "session_id": "test-session",
@@ -20,7 +20,7 @@ async def test_chat():
         # 테스트 2: 주소 조회
         print("\n2. 테스트: '주소 컬렉션 조회해줘'")
         async with session.post(
-            "http://localhost:8000/chat",
+            "http://localhost:8505/chat",
             json={
                 "message": "주소 컬렉션 조회해줘",
                 "session_id": "test-session",
