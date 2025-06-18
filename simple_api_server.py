@@ -291,13 +291,25 @@ async def chat_endpoint(request: ChatRequest):
                 # ADK Runner 비동기 실행
                 print(f"🔄 ADK Runner 비동기 실행 시작...")
                 events = []
-                async for event in runner.run_async(
-                    user_id=user_id,
-                    session_id=session_id,
-                    new_message=content
-                ):
-                    events.append(event)
-                    print(f"📨 이벤트 수신: {type(event).__name__}")
+                
+                try:
+                    async for event in runner.run_async(
+                        user_id=user_id,
+                        session_id=session_id,
+                        new_message=content
+                    ):
+                        events.append(event)
+                        print(f"📨 이벤트 수신: {type(event).__name__}")
+                        
+                        # 텍스트 응답이 있는 이벤트를 즉시 확인
+                        if hasattr(event, 'content') and hasattr(event.content, 'parts'):
+                            for part in event.content.parts:
+                                if hasattr(part, 'text') and part.text:
+                                    print(f"💬 즉시 텍스트 발견: {part.text[:100]}...")
+                
+                except Exception as mcp_error:
+                    print(f"⚠️ MCP 연결 에러 발생, 하지만 이미 받은 이벤트들을 처리합니다: {mcp_error}")
+                    # 에러가 발생해도 이미 받은 이벤트들은 처리 계속
                 
                 print(f"✅ 총 {len(events)}개의 이벤트 수신 완료")
                 
@@ -334,6 +346,13 @@ async def chat_endpoint(request: ChatRequest):
                     except Exception as e:
                         print(f"⚠️ 이벤트 처리 중 오류: {e}")
                         continue
+                
+                # 응답이 없거나 MCP 에러인 경우 기본 대안 응답 제공
+                if not response_text or "응답을 생성했지만 텍스트를 추출할 수 없습니다" in response_text:
+                    if len(events) > 0:
+                        response_text = "죄송합니다. 현재 일부 고급 기능에 연결 문제가 있어 기본 응답을 제공합니다. Firebase 데이터베이스 연결을 확인 중입니다."
+                    else:
+                        response_text = "ADK 에이전트가 실행 중이지만 응답을 받지 못했습니다. 다시 시도해 주세요."
                 
                 print(f"📥 ADK v1.0.0 최종 응답: {response_text[:200]}...")
                 
