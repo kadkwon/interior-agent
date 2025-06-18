@@ -218,7 +218,14 @@ class FirebaseMCPClient:
                     else:
                         result = await response.json()
                     
-                    logger.info(f"도구 '{tool_name}' 호출 성공")
+                    # JSON-RPC 2.0 응답에서 실제 성공/실패 판단
+                    if "error" in result:
+                        logger.error(f"Firebase MCP 도구 '{tool_name}' 호출 실패: {result.get('error', {}).get('message', 'Unknown error')}")
+                        logger.error(f"에러 상세: {result}")
+                    else:
+                        logger.info(f"✅ 도구 '{tool_name}' 호출 성공")
+                        logger.debug(f"응답 내용: {result}")
+                    
                     return result
                 else:
                     logger.error(f"Firebase MCP 도구 호출 실패: {response.status}")
