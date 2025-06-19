@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "firebase": {
-      "command": "npx",
-      "args": ["firebase-tools", "experimental:mcp", "--dir", "."]
-    }
-  }
-} 
