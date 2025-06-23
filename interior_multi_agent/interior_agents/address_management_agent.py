@@ -213,7 +213,18 @@ def create_address_agent():
             })
             return result
 
-        # 5. 문서 삭제 함수
+        # 5. 문서 조회 함수 (상세 조회용)
+        async def firestore_get_document(collection: str, document_id: str):
+            """Firestore 특정 문서 상세 조회"""
+            print(f"🔥 Firebase {collection}/{document_id} 문서 상세 조회 중...")
+            
+            result = await firebase_client.call_tool("firestore_get_document", {
+                "collection": collection,
+                "id": document_id
+            })
+            return result
+
+        # 6. 문서 삭제 함수
         async def firestore_delete_document(collection: str, document_id: str):
             """Firestore 문서 삭제"""
             print(f"🔥 Firebase {collection}/{document_id} 문서 삭제 중...")
@@ -228,6 +239,7 @@ def create_address_agent():
         tools = [
             FunctionTool(firestore_list_collections),
             FunctionTool(firestore_list_documents),
+            FunctionTool(firestore_get_document),
             FunctionTool(firestore_add_document),
             FunctionTool(firestore_update_document),
             FunctionTool(firestore_delete_document)
@@ -254,35 +266,66 @@ def create_address_agent():
 **"schedules" 언급 시:**
 → 즉시 firestore_list_documents(collection="schedules", limit=20) 실행
 
+### 🧠 컨텍스트 인식 및 참조 처리:
+
+**컨텍스트 정보 형식 인식:**
+```
+[컨텍스트 정보]
+이전 대화: [대화 내용]
+최근 결과: [조회 결과]
+
+[현재 요청]
+[실제 요청]
+```
+
+**참조 표현 처리:**
+- "방금 조회한 결과" → 최근 결과에서 참조
+- "첫 번째 문서" → 목록의 첫 번째 항목 식별
+- "두 번째", "세 번째" → 해당 순서의 항목
+- "마지막 문서" → 목록의 마지막 항목
+
+**상세 조회 로직:**
+1. 컨텍스트에서 이전 조회 결과 파싱
+2. 요청된 순서(첫 번째, 두 번째 등) 식별
+3. 해당 문서의 ID 추출
+4. firestore_get_document 또는 상세 정보 조회
+
 ### 🚫 절대 금지:
 - ❌ "몇 개를 조회할까요?" 같은 질문 금지
 - ❌ 추가 정보 요청 금지
 - ❌ 도구 사용 없이 텍스트로만 응답 금지
+- ❌ "이전 조회 결과는 저장되지 않습니다" 응답 금지
 
 ### ✅ 올바른 동작:
-1. 사용자 요청 분석
-2. 키워드 감지 → 즉시 해당 도구 실행
-3. 결과를 명확하게 한국어로 설명
+1. 요청에서 컨텍스트 정보 파싱
+2. 참조 표현 인식 (방금, 첫 번째 등)
+3. 컨텍스트 기반 적절한 도구 실행
+4. 결과를 명확하게 한국어로 설명
 
 ### 🎯 기본 설정:
 - 주소 관련 요청은 무조건 addressesJson 컬렉션에서 조회
 - limit 기본값: 50개 (충분한 데이터 표시)
+- 컨텍스트 없으면 새로운 조회 수행
 - 에러 시에도 재시도 또는 대안 제시
 
 ### 📝 데이터 구조 (addressesJson):
 ```json
 {
-    "name": "장소명",
-    "address": "전체 주소",
-    "zipCode": "우편번호", 
-    "city": "도시명",
-    "district": "구/군",
-    "category": "주거/상업/기타",
-    "description": "추가 설명"
+    "id": "문서ID",
+    "description": "주소 설명",
+    "dataJson": "상세 정보 JSON 문자열"
 }
 ```
 
-**핵심**: 사용자가 "주소", "조회" 등의 키워드를 언급하면 질문하지 말고 바로 Firebase 도구를 사용하세요!
+### 💡 참조 처리 예시:
+
+**요청**: "방금 조회한 결과에서 첫 번째 문서 상세 보여줘"
+**처리**:
+1. 컨텍스트에서 이전 addressesJson 조회 결과 확인
+2. 첫 번째 문서 ID 추출 (예: "1734608505871")
+3. 해당 문서의 상세 정보 표시 (description + dataJson 파싱)
+
+**핵심**: 컨텍스트 정보를 적극 활용하여 이전 결과를 기반으로 추가 작업을 수행하세요!
 
 모든 응답은 한국어로 해주세요.''',
             tools=tools

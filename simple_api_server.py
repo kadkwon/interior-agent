@@ -52,6 +52,42 @@ except ImportError as e:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# 세션별 대화 히스토리 저장소 (메모리 기반)
+session_histories = {}
+
+def add_to_session_history(session_id: str, message_type: str, content: str, metadata: dict = None):
+    """세션 히스토리에 메시지 추가"""
+    if session_id not in session_histories:
+        session_histories[session_id] = []
+    
+    session_histories[session_id].append({
+        "type": message_type,  # "user" 또는 "assistant"
+        "content": content,
+        "timestamp": datetime.now().isoformat(),
+        "metadata": metadata or {}
+    })
+    
+    # 히스토리가 너무 길어지면 오래된 것부터 제거 (최대 50개)
+    if len(session_histories[session_id]) > 50:
+        session_histories[session_id] = session_histories[session_id][-50:]
+    
+    print(f"📝 세션 {session_id} 히스토리 추가: {message_type} - {content[:50]}...")
+    print(f"📊 현재 히스토리 개수: {len(session_histories[session_id])}")
+
+def get_session_context(session_id: str, last_n: int = 5) -> str:
+    """세션의 최근 대화 컨텍스트를 문자열로 반환"""
+    if session_id not in session_histories:
+        return ""
+    
+    recent_history = session_histories[session_id][-last_n:]
+    context_lines = []
+    
+    for entry in recent_history:
+        role = "사용자" if entry["type"] == "user" else "어시스턴트"
+        context_lines.append(f"{role}: {entry['content']}")
+    
+    return "\n".join(context_lines)
+
 # FastAPI 앱 생성
 app = FastAPI(title="Firebase MCP 프록시 서버", version="1.0.0")
 
@@ -263,10 +299,30 @@ async def health_check():
 async def chat_endpoint(request: ChatRequest):
     """채팅 엔드포인트 - ADK 루트 에이전트 또는 기본 응답"""
     try:
+        # 세션 ID 처리
+        session_id = request.session_id or f"default-session-{uuid.uuid4()}"
+        user_message = request.message
+        
+        print(f"💬 채팅 요청 - 세션: {session_id}, 메시지: {user_message[:50]}...")
+        
+        # 사용자 메시지를 히스토리에 추가
+        add_to_session_history(session_id, "user", user_message)
+        
+        # 현재 세션의 컨텍스트 가져오기
+        session_context = get_session_context(session_id, last_n=10)
+        if session_context:
+            print(f"📚 세션 컨텍스트 (최근 10개):\n{session_context}")
+        else:
+            print(f"📚 세션 컨텍스트: 없음 (새 세션)")
+            
+        # 컨텍스트를 포함한 메시지 구성 (ADK에 전달할 때 사용)
+        message_with_context = user_message
+        if session_context:
+            message_with_context = f"[이전 대화 컨텍스트]\n{session_context}\n\n[현재 질문]\n{user_message}"
         if ADK_AGENT_AVAILABLE:
             # ADK 루트 에이전트 사용 (v1.0.0 완전 비동기 방식)
             try:
-                print(f"📤 ADK v1.0.0 완전 비동기 방식으로 메시지 전송: {request.message}")
+                print(f"📤 ADK v1.0.0 완전 비동기 방식으로 메시지 전송: {message_with_context[:100]}...")
                 
                 # ADK v1.0.0 세션 서비스 및 Runner 설정
                 session_service = InMemorySessionService()
@@ -276,23 +332,23 @@ async def chat_endpoint(request: ChatRequest):
                     session_service=session_service
                 )
                 
-                # 세션 생성 (완전 비동기)
+                # 세션 생성 (완전 비동기) - React 세션 ID를 ADK 세션 ID로 사용
                 app_name = "interior_chatbot"
-                user_id = request.session_id or f"user_{uuid.uuid4()}"
-                session_id = f"session_{uuid.uuid4()}"
+                user_id = session_id  # React에서 온 세션 ID 사용
+                adk_session_id = f"adk-{session_id}"  # ADK 전용 세션 ID
                 
                 # 비동기 세션 생성 - await 사용
                 session = await session_service.create_session(
                     app_name=app_name,
                     user_id=user_id,
-                    session_id=session_id
+                    session_id=adk_session_id
                 )
-                print(f"✅ 세션 생성 완료: {session_id}")
+                print(f"✅ ADK 세션 생성 완료: {adk_session_id}")
                 
-                # 메시지 생성
+                # 메시지 생성 (컨텍스트 포함)
                 content = types.Content(
                     role='user', 
-                    parts=[types.Part(text=request.message)]
+                    parts=[types.Part(text=message_with_context)]
                 )
                 
                 # ADK Runner 비동기 실행
@@ -300,7 +356,7 @@ async def chat_endpoint(request: ChatRequest):
                 events = []
                 async for event in runner.run_async(
                     user_id=user_id,
-                    session_id=session_id,
+                    session_id=adk_session_id,
                     new_message=content
                 ):
                     events.append(event)
@@ -344,6 +400,12 @@ async def chat_endpoint(request: ChatRequest):
                 
                 print(f"📥 ADK v1.0.0 최종 응답: {response_text[:200]}...")
                 
+                # 응답을 히스토리에 추가
+                add_to_session_history(session_id, "assistant", response_text, {
+                    "agent_type": "adk_root_agent",
+                    "adk_session_id": adk_session_id
+                })
+                
                 # Firebase 도구 사용 여부 확인
                 firebase_tools_used = []
                 if "firestore" in response_text.lower() or "firebase" in response_text.lower():
@@ -368,7 +430,7 @@ async def chat_endpoint(request: ChatRequest):
                 pass
         
         # 기본 응답 로직 (ADK 에이전트 사용 불가능하거나 에러 시)
-        user_message = request.message.lower()
+        user_message_lower = user_message.lower()
         
         # Firebase에서 데이터 조회 시도
         firebase_tools_used = []
@@ -383,22 +445,28 @@ async def chat_endpoint(request: ChatRequest):
             logger.warning(f"Firebase 연결 실패: {e}")
         
         # 간단한 인테리어 응답 로직
-        if any(keyword in user_message for keyword in ["안녕", "hello", "hi"]):
+        if any(keyword in user_message_lower for keyword in ["안녕", "hello", "hi"]):
             response = "안녕하세요! 인테리어 전문 에이전트입니다. ADK 시스템과 연결하여 더 전문적인 서비스를 제공합니다!"
-        elif any(keyword in user_message for keyword in ["예산", "비용", "가격"]):
+        elif any(keyword in user_message_lower for keyword in ["예산", "비용", "가격"]):
             response = "인테리어 예산은 공간 크기, 원하는 스타일, 자재 등에 따라 달라집니다. 구체적인 정보를 알려주시면 더 정확한 견적을 도와드릴 수 있어요!"
-        elif any(keyword in user_message for keyword in ["디자인", "스타일", "컨셉"]):
+        elif any(keyword in user_message_lower for keyword in ["디자인", "스타일", "컨셉"]):
             response = "어떤 스타일을 선호하시나요? 모던, 클래식, 미니멀, 북유럽 등 다양한 스타일이 있습니다. 공간의 용도와 개인 취향을 고려해서 추천해드릴게요!"
-        elif any(keyword in user_message for keyword in ["색상", "컬러", "색깔"]):
+        elif any(keyword in user_message_lower for keyword in ["색상", "컬러", "색깔"]):
             response = "색상 선택은 공간의 분위기를 결정하는 중요한 요소입니다. 밝은 색상은 공간을 넓어 보이게 하고, 어두운 색상은 아늑한 느낌을 줍니다."
-        elif any(keyword in user_message for keyword in ["시공", "공사", "리모델링"]):
+        elif any(keyword in user_message_lower for keyword in ["시공", "공사", "리모델링"]):
             response = "시공 과정에서는 전기, 배관, 타일, 도배 등 순서가 중요합니다. 전문 업체와 상담하여 체계적으로 진행하시는 것을 추천드려요."
-        elif any(keyword in user_message for keyword in ["주소", "위치", "address", "location"]):
+        elif any(keyword in user_message_lower for keyword in ["주소", "위치", "address", "location"]):
             response = "주소 관리 기능이 필요하시군요! ADK 에이전트가 활성화되면 Firebase를 통한 주소 저장 및 관리가 가능합니다."
         else:
-            response = f"'{request.message}'에 대해 더 구체적으로 알려주시면 더 정확한 답변을 드릴 수 있어요. 인테리어 관련 궁금한 점이 있으시면 언제든 물어보세요!"
+            response = f"'{user_message}'에 대해 더 구체적으로 알려주시면 더 정확한 답변을 드릴 수 있어요. 인테리어 관련 궁금한 점이 있으시면 언제든 물어보세요!"
         
         agent_status = "fallback_mode" if not ADK_AGENT_AVAILABLE else "basic_mode"
+        
+        # 기본 응답을 히스토리에 추가
+        add_to_session_history(session_id, "assistant", response, {
+            "agent_type": "fallback_agent",
+            "agent_status": agent_status
+        })
         
         return ChatResponse(
             response=response,
@@ -410,6 +478,29 @@ async def chat_endpoint(request: ChatRequest):
     except Exception as e:
         logger.error(f"채팅 처리 오류: {e}")
         raise HTTPException(status_code=500, detail=f"채팅 처리 중 오류가 발생했습니다: {str(e)}")
+
+@app.get("/debug/session/{session_id}")
+async def get_session_history(session_id: str):
+    """세션 히스토리 조회 (디버깅용)"""
+    if session_id not in session_histories:
+        return {"error": "세션을 찾을 수 없습니다."}
+    
+    return {
+        "session_id": session_id,
+        "message_count": len(session_histories[session_id]),
+        "history": session_histories[session_id]
+    }
+
+@app.get("/debug/sessions")
+async def get_all_sessions():
+    """모든 세션 목록 조회 (디버깅용)"""
+    return {
+        "total_sessions": len(session_histories),
+        "sessions": {
+            session_id: len(history) 
+            for session_id, history in session_histories.items()
+        }
+    }
 
 @app.post("/firebase/tool")
 async def call_firebase_tool(request: ToolCallRequest):
