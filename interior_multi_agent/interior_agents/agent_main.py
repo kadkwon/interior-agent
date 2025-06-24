@@ -7,7 +7,7 @@ from google.adk.tools.agent_tool import AgentTool
 from .address_management_agent import address_agent
 
 print("=== 루트 에이전트 초기화 시작 ===")
-print(f"주소 관리 에이전트 로드됨: {address_agent.name}")
+print(f"데이터 관리 에이전트 로드됨: {address_agent.name}")
 
 # 루트 에이전트 생성 - 직접 HTTP Firebase 연결 버전
 root_agent = Agent(
@@ -18,9 +18,9 @@ root_agent = Agent(
 
 ## 🎯 핵심 임무: 전문 에이전트 적극 활용
 
-### 📊 address_manager 에이전트 호출 규칙 (매우 중요!)
+### 📊 data_manager 에이전트 호출 규칙 (매우 중요!)
 
-다음 키워드가 포함된 요청은 **무조건 address_manager 에이전트를 사용**하세요:
+다음 키워드가 포함된 요청은 **무조건 data_manager 에이전트를 사용**하세요:
 
 **Firebase/데이터 관련 키워드:**
 - "schedules", "컬렉션", "collection"
