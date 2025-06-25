@@ -24,23 +24,26 @@ CLOUD_FUNCTIONS_CONFIG = {
 EMAIL_CONFIG = {
     "timeout": 60,  # 초
     "subject_template": "아마레디자인 견적서 - {address}",
-    "content_template": """안녕하세요, 아마레디자인입니다.
+    "content_template": """안녕하세요! 아마레디자인입니다. 견적요청 주셔서 대단히 감사해요.
 
-{address} 프로젝트의 견적서를 보내드립니다.
+{address} 프로젝트 견적서를 보내드려요.
 
-📋 견적 요약:
+📋 견적 상세:
+{process_details}
+
+💰 견적 요약:
 - 총 공정 수: {process_count}개
 - 기본 공사비: {basic_total:,}원
 - 기업이윤 ({corporate_profit_percentage}%): {corporate_profit_amount:,}원
 - 총 견적 금액: {total_amount:,}원
 
-자세한 내역은 첨부된 견적서를 확인해주시고, 궁금한 점이 있으시면 언제든지 연락주세요.
+궁금한 점이 있으시면 언제든지 연락주세요!
 
 감사합니다.
 
 아마레디자인 드림
-전화: 010-0000-0000
-이메일: design@amare.co.kr""",
+전화: 010-8694-4078
+이메일: amaredesign@amaredesign.kr""",
     "default_corporate_profit": {
         "percentage": 10,
         "isVisible": True

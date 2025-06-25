@@ -84,6 +84,9 @@ async def _send_estimate_email_async(
         total_amount = basic_total + corporate_profit_amount
         corporate_profit_percentage = corporate_profit.get("percentage", 10)
         
+        # 공정 상세 정보 생성
+        process_details = _generate_process_details(process_data)
+        
         if template_content is None:
             template_content = CONFIG["email"]["content_template"].format(
                 address=address,
@@ -91,7 +94,8 @@ async def _send_estimate_email_async(
                 basic_total=basic_total,
                 corporate_profit_percentage=corporate_profit_percentage,
                 corporate_profit_amount=corporate_profit_amount,
-                total_amount=total_amount
+                total_amount=total_amount,
+                process_details=process_details
             )
         
         # Cloud Functions API 호출을 위한 데이터 준비 (기존 emailService.js 형식과 동일)
@@ -201,6 +205,40 @@ async def _send_estimate_email_async(
                 }
             ]
         }
+
+def _generate_process_details(process_data: list) -> str:
+    """
+    공정 상세 정보를 이메일용 텍스트로 생성
+    """
+    try:
+        details = []
+        
+        for i, process in enumerate(process_data, 1):
+            if isinstance(process, dict) and process.get("total", 0) > 0:
+                process_name = process.get("name", "알 수 없는 공정")
+                process_total = process.get("total", 0)
+                
+                details.append(f"{i}. {process_name}: {process_total:,}원")
+                
+                # 공정 내 세부 항목들 (선택적으로 표시)
+                items = process.get("items", [])
+                if items and len(items) <= 5:  # 항목이 5개 이하일 때만 상세 표시
+                    for item in items:
+                        if isinstance(item, dict) and not item.get("isAdditional", False):
+                            item_name = item.get("name", "")
+                            item_total = item.get("totalPrice", 0)
+                            if item_total > 0:
+                                details.append(f"   - {item_name}: {item_total:,}원")
+                
+                # 각 공정 사이에 줄바꿈 추가
+                if i < len([p for p in process_data if isinstance(p, dict) and p.get("total", 0) > 0]):
+                    details.append("")
+        
+        return "\n".join(details)
+        
+    except Exception as e:
+        print(f"⚠️ 공정 상세 정보 생성 중 오류: {e}")
+        return "공정 상세 정보를 생성할 수 없습니다."
 
 def _calculate_basic_total(process_data: list) -> int:
     """
