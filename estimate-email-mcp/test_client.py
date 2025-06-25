@@ -149,7 +149,7 @@ def test_config():
         
         print(f"📊 서버: {CONFIG['server']['name']}")
         print(f"📡 주소: http://{CONFIG['server']['host']}:{CONFIG['server']['port']}/sse")
-        print(f"☁️  Cloud Functions: {CONFIG['cloud_functions']['send_estimate_pdf']}")
+        print(f"☁️  Cloud Functions: {CONFIG['cloud_functions']['send_estimate_email']}")
         print(f"⏱️  타임아웃: {CONFIG['email']['timeout']}초")
         print(f"💰 기본 기업이윤: {CONFIG['email']['default_corporate_profit']['percentage']}%")
         print("✅ 설정 검증 완료!")

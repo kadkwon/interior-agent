@@ -17,7 +17,7 @@ SERVER_CONFIG = {
 
 # Cloud Functions API 설정 (React 앱 우회, 직접 호출)
 CLOUD_FUNCTIONS_CONFIG = {
-    "send_estimate_pdf": "https://us-central1-interior-one-click.cloudfunctions.net/sendEstimatePdfHttp"
+    "send_estimate_email": "https://us-central1-interior-one-click.cloudfunctions.net/sendEstimatePdfHttp"
 }
 
 # 이메일 전송 설정
@@ -28,7 +28,13 @@ EMAIL_CONFIG = {
 
 {address} 프로젝트의 견적서를 보내드립니다.
 
-첨부된 견적서를 확인해주시고, 궁금한 점이 있으시면 언제든지 연락주세요.
+📋 견적 요약:
+- 총 공정 수: {process_count}개
+- 기본 공사비: {basic_total:,}원
+- 기업이윤 ({corporate_profit_percentage}%): {corporate_profit_amount:,}원
+- 총 견적 금액: {total_amount:,}원
+
+자세한 내역은 첨부된 견적서를 확인해주시고, 궁금한 점이 있으시면 언제든지 연락주세요.
 
 감사합니다.
 
@@ -55,7 +61,7 @@ def validate_config():
         ("server", "name"),
         ("server", "host"), 
         ("server", "port"),
-        ("cloud_functions", "send_estimate_pdf"),
+        ("cloud_functions", "send_estimate_email"),
         ("email", "timeout"),
         ("email", "subject_template"),
         ("email", "content_template")
@@ -66,7 +72,7 @@ def validate_config():
             raise ValueError(f"설정 누락: {section}.{key}")
     
     # Cloud Functions URL 검증
-    cloud_url = CONFIG["cloud_functions"]["send_estimate_pdf"]
+    cloud_url = CONFIG["cloud_functions"]["send_estimate_email"]
     if not cloud_url.startswith("https://"):
         raise ValueError("Cloud Functions URL은 HTTPS여야 합니다")
     
@@ -84,7 +90,7 @@ if __name__ == "__main__":
         
         print(f"📊 서버: {CONFIG['server']['name']} v{CONFIG['server']['version']}")
         print(f"📡 주소: http://{CONFIG['server']['host']}:{CONFIG['server']['port']}/sse")
-        print(f"☁️  Cloud Functions: {CONFIG['cloud_functions']['send_estimate_pdf']}")
+        print(f"☁️  Cloud Functions: {CONFIG['cloud_functions']['send_estimate_email']}")
         print(f"⏱️  타임아웃: {CONFIG['email']['timeout']}초")
         print(f"💰 기본 기업이윤: {CONFIG['email']['default_corporate_profit']['percentage']}%")
         print()

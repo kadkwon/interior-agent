@@ -5,11 +5,10 @@ FastMCP 기반 견적서 이메일 전송 전용 MCP 서버
 
 역할:
 - Claude Web에서 Firebase MCP로 조회한 견적서 데이터를 받아서
-- 직접 Cloud Functions API를 호출하여 PDF 첨부 이메일 전송
-- 기존 PDF 생성 및 이메일 전송 로직 재사용 (React 앱 우회)
+- 직접 Cloud Functions API를 호출하여 이메일 전송
+- 견적 데이터 가공 및 기업이윤 계산 처리
 """
 
-import asyncio
 import json
 import aiohttp
 from typing import Dict, Any, Optional
@@ -20,10 +19,10 @@ from config import CONFIG
 mcp = FastMCP("Estimate Email Server")
 
 # Cloud Functions 직접 호출 (React 앱 우회)
-CLOUD_FUNCTIONS_URL = CONFIG["cloud_functions"]["send_estimate_pdf"]
+CLOUD_FUNCTIONS_URL = CONFIG["cloud_functions"]["send_estimate_email"]
 
 @mcp.tool()
-def send_estimate_email(
+async def send_estimate_email(
     email: str,
     address: str, 
     process_data: list,
@@ -49,10 +48,10 @@ def send_estimate_email(
     Returns:
         Dict[str, Any]: 전송 결과 및 상태 정보
     """
-    return asyncio.run(_send_estimate_email_async(
+    return await _send_estimate_email_async(
         email, address, process_data, notes, hidden_processes, 
         corporate_profit, subject, template_content
-    ))
+    )
 
 async def _send_estimate_email_async(
     email: str,
@@ -79,15 +78,28 @@ async def _send_estimate_email_async(
             corporate_profit = CONFIG["email"]["default_corporate_profit"].copy()
         if subject is None:
             subject = CONFIG["email"]["subject_template"].format(address=address)
+        # 견적 금액 계산
+        basic_total = _calculate_basic_total(process_data)
+        corporate_profit_amount = _calculate_corporate_profit_amount(process_data, corporate_profit)
+        total_amount = basic_total + corporate_profit_amount
+        corporate_profit_percentage = corporate_profit.get("percentage", 10)
+        
         if template_content is None:
-            template_content = CONFIG["email"]["content_template"].format(address=address)
+            template_content = CONFIG["email"]["content_template"].format(
+                address=address,
+                process_count=len(process_data),
+                basic_total=basic_total,
+                corporate_profit_percentage=corporate_profit_percentage,
+                corporate_profit_amount=corporate_profit_amount,
+                total_amount=total_amount
+            )
         
         # Cloud Functions API 호출을 위한 데이터 준비 (기존 emailService.js 형식과 동일)
         cloud_functions_payload = {
             "to": email,
             "subject": subject,
             "html": template_content,
-            # PDF 생성을 위한 견적서 데이터
+            # 견적서 데이터
             "estimateData": {
                 "selectedAddress": address,
                 "processData": process_data,
@@ -190,18 +202,33 @@ async def _send_estimate_email_async(
             ]
         }
 
+def _calculate_basic_total(process_data: list) -> int:
+    """
+    기본 공사비 합계 계산 (추가금액 제외)
+    """
+    try:
+        basic_total = 0
+        for process in process_data:
+            if isinstance(process, dict) and "total" in process:
+                basic_total += process.get("total", 0)
+            elif isinstance(process, dict) and "items" in process:
+                for item in process["items"]:
+                    if isinstance(item, dict) and not item.get("isAdditional", False):
+                        basic_total += item.get("totalPrice", 0)
+        
+        print(f"💰 기본 공사비 합계: {basic_total:,}원")
+        return basic_total
+        
+    except Exception as e:
+        print(f"⚠️ 기본 공사비 계산 중 오류: {e}")
+        return 0
+
 def _calculate_corporate_profit_amount(process_data: list, corporate_profit: dict) -> int:
     """
     기업이윤 금액 계산
     """
     try:
-        # 기본 공정들의 합계 계산 (추가금액 제외)
-        basic_total = 0
-        for process in process_data:
-            if isinstance(process, dict) and "items" in process:
-                for item in process["items"]:
-                    if isinstance(item, dict) and not item.get("isAdditional", False):
-                        basic_total += item.get("totalPrice", 0)
+        basic_total = _calculate_basic_total(process_data)
         
         # 기업이윤 계산
         percentage = corporate_profit.get("percentage", 10)
@@ -248,7 +275,7 @@ def get_server_info() -> Dict[str, Any]:
 - 포트: {CONFIG['server']['port']}
 
 📧 이메일 설정:
-- Cloud Functions URL: {CONFIG['cloud_functions']['send_estimate_pdf']}
+- Cloud Functions URL: {CONFIG['cloud_functions']['send_estimate_email']}
 - 타임아웃: {CONFIG['email']['timeout']}초
 - 기본 제목 템플릿: {CONFIG['email']['subject_template']}
 
@@ -257,7 +284,7 @@ def get_server_info() -> Dict[str, Any]:
 - 표시 여부: {CONFIG['email']['default_corporate_profit']['isVisible']}
 
 🛠️ 지원 기능:
-- PDF 생성 및 첨부
+- 견적 데이터 가공 및 처리
 - Gmail API를 통한 이메일 전송
 - 기업이윤 자동 계산
 - 에러 처리 및 로깅
