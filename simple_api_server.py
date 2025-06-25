@@ -319,6 +319,90 @@ async def chat_endpoint(request: ChatRequest):
         message_with_context = user_message
         if session_context:
             message_with_context = f"[이전 대화 컨텍스트]\n{session_context}\n\n[현재 질문]\n{user_message}"
+            
+        # 🚨 이메일 전송 키워드 감지 및 직접 처리
+        user_message_lower = user_message.lower()
+        email_keywords = ["이메일", "메일", "email", "전송", "보내", "발송", "보내줘", "@"]
+        estimate_keywords = ["견적서", "estimate", "estimateversionsv3"]
+        
+        if any(keyword in user_message_lower for keyword in email_keywords) and any(keyword in user_message_lower for keyword in estimate_keywords):
+            print("📧 이메일 전송 요청 감지! 직접 처리합니다...")
+            
+            try:
+                # 이메일 전송 처리
+                from interior_multi_agent.interior_agents.email_agent import EmailManagerAgent
+                import re
+                
+                # 이메일 주소 추출
+                email_pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
+                email_match = re.search(email_pattern, user_message)
+                email_address = email_match.group() if email_match else ""
+                
+                # 주소 추출 (한국 주소 패턴)
+                address_patterns = [
+                    r'([가-힣]+\s*[0-9]*차?\s*[0-9]+동\s*[0-9]+호)',  # "월배아이파크 1차 109동 2401호"
+                    r'([가-힣\s]+[0-9]+동\s*[0-9]+호)',              # "삼성래미안 103동 702호"
+                    r'([가-힣\s]+[동호][0-9\s]+[동호])'              # 기타 패턴
+                ]
+                
+                address = ""
+                for pattern in address_patterns:
+                    match = re.search(pattern, user_message)
+                    if match:
+                        address = match.group(1).strip()
+                        break
+                
+                if not email_address:
+                    response = "❌ 이메일 주소를 찾을 수 없습니다. 올바른 이메일 주소를 포함해서 다시 요청해주세요."
+                    add_to_session_history(session_id, "assistant", response)
+                    return ChatResponse(
+                        response=response,
+                        timestamp=datetime.now().isoformat(),
+                        agent_status="email_extraction_failed",
+                        firebase_tools_used=[]
+                    )
+                
+                if not address:
+                    response = "❌ 주소 정보를 찾을 수 없습니다. 정확한 주소(동/호수 포함)를 포함해서 다시 요청해주세요."
+                    add_to_session_history(session_id, "assistant", response)
+                    return ChatResponse(
+                        response=response,
+                        timestamp=datetime.now().isoformat(),
+                        agent_status="address_extraction_failed",
+                        firebase_tools_used=[]
+                    )
+                
+                print(f"📧 추출된 이메일: {email_address}")
+                print(f"🏠 추출된 주소: {address}")
+                
+                # 이메일 전송 처리
+                email_agent = EmailManagerAgent()
+                result = email_agent.process_request(f"{address} 견적서를 {email_address}로 전송해줘")
+                
+                # 결과를 히스토리에 추가
+                add_to_session_history(session_id, "assistant", result, {
+                    "agent_type": "email_manager_direct",
+                    "email_address": email_address,
+                    "address": address
+                })
+                
+                return ChatResponse(
+                    response=result,
+                    timestamp=datetime.now().isoformat(),
+                    agent_status="email_sent_directly",
+                    firebase_tools_used=["estimate_email_mcp", "firestore_query"]
+                )
+                
+            except Exception as e:
+                error_msg = f"❌ 이메일 전송 중 오류가 발생했습니다: {str(e)}"
+                print(f"📧 이메일 전송 오류: {e}")
+                add_to_session_history(session_id, "assistant", error_msg)
+                return ChatResponse(
+                    response=error_msg,
+                    timestamp=datetime.now().isoformat(),
+                    agent_status="email_send_error",
+                    firebase_tools_used=[]
+                )
         if ADK_AGENT_AVAILABLE:
             # ADK 루트 에이전트 사용 (v1.0.0 완전 비동기 방식)
             try:
@@ -430,7 +514,7 @@ async def chat_endpoint(request: ChatRequest):
                 pass
         
         # 기본 응답 로직 (ADK 에이전트 사용 불가능하거나 에러 시)
-        user_message_lower = user_message.lower()
+        # user_message_lower는 이미 위에서 정의됨
         
         # Firebase에서 데이터 조회 시도
         firebase_tools_used = []
