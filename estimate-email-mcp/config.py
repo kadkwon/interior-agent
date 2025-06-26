@@ -24,26 +24,136 @@ CLOUD_FUNCTIONS_CONFIG = {
 EMAIL_CONFIG = {
     "timeout": 60,  # 초
     "subject_template": "아마레디자인 견적서 - {address}",
-    "content_template": """안녕하세요! 아마레디자인입니다. 견적요청 주셔서 대단히 감사해요.
+    "content_template": """
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { 
+            font-family: 'Segoe UI', Arial, sans-serif; 
+            line-height: 1.6; 
+            color: #333; 
+            max-width: 800px; 
+            margin: 0 auto; 
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .header { 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px; 
+            text-align: center;
+        }
+        .header h2 {
+            margin: 0 0 10px 0;
+            font-size: 24px;
+            font-weight: 600;
+        }
+        .header p {
+            margin: 5px 0;
+            opacity: 0.9;
+        }
+        .content { 
+            padding: 30px;
+        }
+        .process-section { 
+            background-color: #ffffff; 
+            margin: 20px 0;
+        }
+        .process-title { 
+            font-size: 18px;
+            font-weight: bold; 
+            color: #495057; 
+            margin-bottom: 15px;
+            border-bottom: 2px solid #e9ecef;
+            padding-bottom: 10px;
+        }
+        .summary { 
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            padding: 20px; 
+            border-radius: 8px; 
+            margin: 25px 0;
+        }
+        .summary h3 {
+            margin: 0 0 15px 0;
+            font-size: 20px;
+        }
+        .summary ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .summary li {
+            padding: 5px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.2);
+        }
+        .summary li:last-child {
+            border-bottom: none;
+        }
+        .footer { 
+            background-color: #f8f9fa;
+            padding: 20px 30px; 
+            text-align: center;
+            border-top: 1px solid #dee2e6;
+        }
+        .contact { 
+            background-color: #ffffff; 
+            padding: 20px; 
+            border-radius: 8px;
+            border: 1px solid #e9ecef;
+            margin-top: 15px;
+        }
+        .contact p {
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h2>🏠 아마레디자인 견적서</h2>
+            <p>안녕하세요! 견적요청 주셔서 대단히 감사합니다.</p>
+            <p><strong>{address}</strong> 프로젝트 견적서를 보내드립니다.</p>
+        </div>
 
-{address} 프로젝트 견적서를 보내드려요.
+        <div class="content">
+            <div class="process-section">
+                <div class="process-title">📋 견적 상세</div>
+                {process_details}
+            </div>
 
-📋 견적 상세:
-{process_details}
+            <div class="summary">
+                <h3>💰 견적 요약</h3>
+                <ul>
+                    <li><strong>총 공정 수:</strong> {process_count}개</li>
+                    <li><strong>기본 공사비:</strong> {basic_total:,}원</li>
+                    <li><strong>기업이윤 ({corporate_profit_percentage}%):</strong> {corporate_profit_amount:,}원</li>
+                    <li><strong>총 견적 금액:</strong> {total_amount:,}원</li>
+                </ul>
+            </div>
+        </div>
 
-💰 견적 요약:
-- 총 공정 수: {process_count}개
-- 기본 공사비: {basic_total:,}원
-- 기업이윤 ({corporate_profit_percentage}%): {corporate_profit_amount:,}원
-- 총 견적 금액: {total_amount:,}원
-
-궁금한 점이 있으시면 언제든지 연락주세요!
-
-감사합니다.
-
-아마레디자인 드림
-전화: 010-8694-4078
-이메일: amaredesign@amaredesign.kr""",
+        <div class="footer">
+            <p>궁금한 점이 있으시면 언제든지 연락주세요!</p>
+            
+            <div class="contact">
+                <p><strong>🏢 아마레디자인</strong></p>
+                <p>📞 전화: 010-8694-4078</p>
+                <p>📧 이메일: amaredesign@amaredesign.kr</p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+""",
     "default_corporate_profit": {
         "percentage": 10,
         "isVisible": True

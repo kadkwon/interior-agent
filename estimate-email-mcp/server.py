@@ -94,7 +94,7 @@ async def _send_estimate_email_async(
         corporate_profit_percentage = corporate_profit.get("percentage", 10)
         
         # 공정 상세 정보 생성
-        process_details = _generate_process_details(process_data)
+        process_details = _generate_process_details(process_data, hidden_processes)
         
         if template_content is None:
             template_content = CONFIG["email"]["content_template"].format(
@@ -215,39 +215,91 @@ async def _send_estimate_email_async(
             ]
         }
 
-def _generate_process_details(process_data: list) -> str:
+def _generate_process_details(process_data: list, hidden_processes: dict = None) -> str:
     """
-    공정 상세 정보를 이메일용 텍스트로 생성
+    공정 상세 정보를 HTML 형식으로 생성 (숨겨진 공정 제외, 번호 대신 아이콘 사용)
     """
     try:
         details = []
         
-        for i, process in enumerate(process_data, 1):
-            if isinstance(process, dict) and process.get("total", 0) > 0:
-                process_name = process.get("name", "알 수 없는 공정")
-                process_total = process.get("total", 0)
+        # 숨겨진 공정 정보 처리
+        if hidden_processes is None:
+            hidden_processes = {}
+        
+        # processOrder 기준으로 정렬하여 올바른 순서 보장
+        sorted_processes = sorted(
+            [p for p in process_data if isinstance(p, dict)], 
+            key=lambda x: x.get("processOrder", 999)
+        )
+        
+        for process in sorted_processes:
+            if not isinstance(process, dict):
+                continue
                 
-                details.append(f"{i}. {process_name}: {process_total:,}원")
+            process_id = process.get("id", "")
+            process_total = process.get("total", 0)
+            process_name = process.get("name", "알 수 없는 공정")
+            
+            # 숨겨진 공정 체크
+            if process_id in hidden_processes and hidden_processes[process_id].get("hidden", False):
+                continue
+            
+            # total이 0보다 큰 공정만 표시
+            if process_total > 0:
+                details.append(f'<div style="margin: 15px 0; padding: 12px; background-color: #f8f9fa; border-left: 4px solid #007bff; border-radius: 4px;">')
+                details.append(f'<div style="font-size: 16px; font-weight: bold; color: #495057; margin-bottom: 8px;">🔧 {process_name}: <span style="color: #007bff;">{process_total:,}원</span></div>')
                 
-                # 공정 내 세부 항목들 (선택적으로 표시)
+                # 공정 내 세부 항목들 표시
                 items = process.get("items", [])
-                if items and len(items) <= 5:  # 항목이 5개 이하일 때만 상세 표시
-                    for item in items:
-                        if isinstance(item, dict) and not item.get("isAdditional", False):
+                if items:
+                    # 기본 항목들 (isAdditional이 False이거나 없는 항목들)
+                    basic_items = [
+                        item for item in items 
+                        if isinstance(item, dict) 
+                        and not item.get("isAdditional", False) 
+                        and item.get("totalPrice", 0) > 0
+                    ]
+                    
+                    if basic_items:
+                        details.append('<div style="margin-left: 20px; margin-top: 8px;">')
+                        for item in basic_items[:6]:  # 최대 6개까지 표시
                             item_name = item.get("name", "")
                             item_total = item.get("totalPrice", 0)
                             if item_total > 0:
-                                details.append(f"   - {item_name}: {item_total:,}원")
+                                details.append(f'<div style="color: #6c757d; margin: 3px 0; font-size: 14px;">• {item_name}: {item_total:,}원</div>')
+                        details.append('</div>')
+                    
+                    # 추가 항목들이 있으면 표시
+                    additional_items = [
+                        item for item in items 
+                        if isinstance(item, dict) 
+                        and item.get("isAdditional", False) 
+                        and item.get("totalPrice", 0) != 0
+                    ]
+                    
+                    if additional_items:
+                        details.append('<div style="margin-left: 20px; margin-top: 8px; padding: 8px; background-color: #fff3cd; border-radius: 3px; border-left: 3px solid #ffc107;">')
+                        details.append('<div style="color: #856404; font-weight: bold; font-size: 13px; margin-bottom: 4px;">📝 추가/변경 항목:</div>')
+                        for item in additional_items[:4]:  # 추가 항목은 최대 4개까지
+                            item_name = item.get("name", "")
+                            item_total = item.get("totalPrice", 0)
+                            if item_total != 0:
+                                sign = "+" if item_total > 0 else ""
+                                color = "#28a745" if item_total > 0 else "#dc3545"
+                                details.append(f'<div style="color: {color}; margin: 2px 0; font-size: 13px;">• {item_name}: {sign}{item_total:,}원</div>')
+                        details.append('</div>')
                 
-                # 각 공정 사이에 줄바꿈 추가
-                if i < len([p for p in process_data if isinstance(p, dict) and p.get("total", 0) > 0]):
-                    details.append("")
+                details.append('</div>')
+        
+        # 표시할 공정이 없으면 기본 메시지
+        if not details:
+            return '<div style="color: #6c757d; text-align: center; padding: 20px; font-style: italic;">표시할 공정이 없습니다.</div>'
         
         return "\n".join(details)
         
     except Exception as e:
         print(f"⚠️ 공정 상세 정보 생성 중 오류: {e}")
-        return "공정 상세 정보를 생성할 수 없습니다."
+        return '<div style="color: #dc3545; padding: 15px; text-align: center;">공정 상세 정보를 생성하는 중 오류가 발생했습니다.</div>'
 
 def _calculate_basic_total(process_data: list) -> int:
     """
