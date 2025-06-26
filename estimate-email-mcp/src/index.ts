@@ -255,38 +255,51 @@ class EstimateEmailMcpServer {
     const details: string[] = [];
 
     for (const process of processData) {
-      const processName = process.processName || '알 수 없는 공정';
-
-      // 숨김 공정 처리
-      if (hiddenProcesses[processName]) {
+      const processName = process.name || '알 수 없는 공정';
+      const processId = process.id;
+      
+      // 숨김 공정 처리 (ID로 확인)
+      if (hiddenProcesses[processId]?.hidden) {
         continue;
       }
 
-      try {
-        const unitPrice = parseFloat(process.unitPrice || '0');
-        const quantity = parseFloat(process.quantity || '0');
-        const totalPrice = unitPrice * quantity;
-
-        const formattedTotal = totalPrice > 0 ? `${totalPrice.toLocaleString()}원` : '가격 문의';
-        details.push(`▶ ${processName}: ${formattedTotal}`);
-      } catch (error) {
-        logger.warn(`공정 '${processName}' 처리 중 오류: ${error}`);
-        details.push(`▶ ${processName}: 가격 문의`);
+      // total이 0이거나 items가 비어있으면 건너뛰기
+      if (!process.total || process.total === 0 || !process.items || process.items.length === 0) {
+        continue;
       }
+
+      // 공정별 총 금액 표시
+      const formattedTotal = `${process.total.toLocaleString()}원`;
+      details.push(`▶ ${processName}: ${formattedTotal}`);
+      
+      // 세부 항목들 추가
+      for (const item of process.items) {
+        if (item.totalPrice && item.totalPrice !== 0) {
+          const itemTotal = `${item.totalPrice.toLocaleString()}원`;
+          details.push(`   - ${item.name}: ${itemTotal}`);
+        }
+      }
+      
+      // 공정 간 빈 줄 추가
+      details.push('');
     }
 
-    return details.length > 0 ? details.join('\n\n') : '공정 정보 없음';
+    return details.length > 0 ? details.join('\n') : '공정 정보 없음';
   }
 
   private calculateBasicTotal(processData: any[]): number {
     let total = 0;
     for (const process of processData) {
       try {
-        const unitPrice = parseFloat(process.unitPrice || '0');
-        const quantity = parseFloat(process.quantity || '0');
-        total += unitPrice * quantity;
+        // Firebase 데이터에서는 각 공정의 total 값을 사용
+        const processTotal = parseFloat(process.total || '0');
+        
+        // excludeFromTotal이 없거나 false인 경우만 합계에 포함
+        if (!process.excludeFromTotal) {
+          total += processTotal;
+        }
       } catch (error) {
-        // 잘못된 데이터는 무시
+        logger.warn(`공정 '${process.name || process.id}' 총합 계산 중 오류: ${error}`);
       }
     }
     return Math.round(total);
