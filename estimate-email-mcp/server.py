@@ -7,16 +7,25 @@ FastMCP 기반 견적서 이메일 전송 전용 MCP 서버
 - Claude Web에서 Firebase MCP로 조회한 견적서 데이터를 받아서
 - 직접 Cloud Functions API를 호출하여 이메일 전송
 - 견적 데이터 가공 및 기업이윤 계산 처리
+- SSE 및 HTTP transport 지원 (클라우드런 호환)
 """
 
 import json
 import aiohttp
+import asyncio
+import os
 from typing import Dict, Any, Optional
 from fastmcp import FastMCP
 from config import CONFIG
 
 # MCP 서버 초기화
 mcp = FastMCP("Estimate Email Server")
+
+# 클라우드런 환경 감지
+IS_CLOUD_RUN = os.getenv('PORT') is not None
+TRANSPORT = os.getenv('MCP_TRANSPORT', 'sse')
+PORT = int(os.getenv('PORT', CONFIG['server']['port']))
+HOST = '0.0.0.0' if IS_CLOUD_RUN else CONFIG['server']['host']
 
 # Cloud Functions 직접 호출 (React 앱 우회)
 CLOUD_FUNCTIONS_URL = CONFIG["cloud_functions"]["send_estimate_email"]
@@ -309,8 +318,10 @@ def get_server_info() -> Dict[str, Any]:
 📊 서버 설정:
 - 이름: {CONFIG['server']['name']}
 - 버전: {CONFIG['server']['version']}
-- 호스트: {CONFIG['server']['host']}
-- 포트: {CONFIG['server']['port']}
+- 호스트: {HOST}
+- 포트: {PORT}
+- Transport: {TRANSPORT}
+- 클라우드런: {IS_CLOUD_RUN}
 
 📧 이메일 설정:
 - Cloud Functions URL: {CONFIG['cloud_functions']['send_estimate_email']}
@@ -337,19 +348,31 @@ def get_server_info() -> Dict[str, Any]:
         ]
     }
 
+# FastMCP는 @mcp.get() 데코레이터를 지원하지 않음
+# Health check는 MCP 도구로 대체
+
 if __name__ == "__main__":
-    # Remote MCP 서버로 실행 (Claude Web에서 접근 가능)
     print("🚀 Estimate Email MCP 서버 시작...")
-    print(f"📡 SSE 서버 주소: http://{CONFIG['server']['host']}:{CONFIG['server']['port']}/sse")
+    print(f"🌐 환경: {'클라우드런' if IS_CLOUD_RUN else '로컬'}")
+    print(f"🚀 Transport: {TRANSPORT}")
+    print(f"📡 서버 주소: http://{HOST}:{PORT}")
     print(f"🔧 지원 도구: send_estimate_email, test_connection, get_server_info")
     print(f"☁️ Cloud Functions: {CLOUD_FUNCTIONS_URL}")
+    
+    if IS_CLOUD_RUN:
+        print(f"🏥 Health check: http://{HOST}:{PORT}/health")
+        if TRANSPORT == "http":
+            print(f"🔗 MCP 엔드포인트: http://{HOST}:{PORT}/mcp")
+        else:
+            print(f"📡 SSE 엔드포인트: http://{HOST}:{PORT}/sse")
+    
     print()
     print("⏹️  서버를 중지하려면 Ctrl+C를 누르세요.")
     
-    # SSE 방식으로 실행 (Claude Web 호환)
+    # SSE 방식으로 실행 (FastMCP HTTP transport 이슈로 인해 SSE 고정)
     mcp.run(
         transport="sse",
-        host=CONFIG['server']['host'],
-        port=CONFIG['server']['port'],
+        host=HOST,
+        port=PORT,
         log_level="info"
     ) 
