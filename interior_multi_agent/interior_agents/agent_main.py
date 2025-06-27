@@ -1,46 +1,50 @@
 """
-🏠 인테리어 멀티 에이전트 메인 - ADK 공식 간단 방식
-
-간단한 ADK 에이전트 시스템으로 주소 관리와 이메일 전송을 담당합니다.
+🏠 인테리어 멀티 에이전트 루트 - 라우팅 시스템
 """
 
 from google.adk.agents import LlmAgent
-from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, SseServerParams
+from google.adk.tools import FunctionTool
 from .address_management_agent import address_agent
 from .email_agent import email_agent
 
-# 메인 인테리어 에이전트 (모든 MCP 도구 포함)
+async def handle_address_request(user_query: str):
+    """주소 관련 요청을 주소 에이전트로 라우팅"""
+    response = await address_agent.send_message(user_query)
+    return {"agent": "address_manager", "response": response.text}
+
+async def handle_email_request(user_query: str):
+    """이메일 관련 요청을 이메일 에이전트로 라우팅"""
+    response = await email_agent.send_message(user_query)
+    return {"agent": "email_manager", "response": response.text}
+
+async def get_system_status():
+    """시스템 상태 확인"""
+    return {
+        "status": "active",
+        "agents": ["address_manager", "email_manager"],
+        "description": "인테리어 멀티 에이전트 시스템이 정상 작동 중입니다."
+    }
+
+# 루트 에이전트 - 라우팅 담당
 interior_agent = LlmAgent(
-    model='gemini-2.0-flash-thinking-exp-1219',
+    model='gemini-2.5-flash-lite-preview-06-17',
     name='interior_multi_agent',
     instruction='''
-당신은 인테리어 프로젝트 관리를 담당하는 AI 어시스턴트입니다.
+인테리어 프로젝트 관리 루트 에이전트입니다.
 
-## 🏠 주요 기능:
-1. **주소 관리**: Firebase의 addressesJson 컬렉션을 사용하여 주소 검색, 추가, 수정, 삭제
-2. **이메일 관리**: 견적서 이메일 전송 및 관리
+## 🎯 라우팅 규칙:
+- 주소/address 관련: handle_address_request 사용
+- 이메일/email 관련: handle_email_request 사용
+- 시스템 상태: get_system_status 사용
 
-## 📋 사용 가능한 도구:
-- Firebase MCP 도구들 (주소 관리용)
-- Email MCP 도구들 (이메일 전송용)
-
-사용자의 요청에 따라 적절한 도구를 선택해서 작업을 수행하세요.
+사용자 요청을 분석해서 적절한 하위 에이전트로 라우팅하세요.
     ''',
     tools=[
-        # Firebase MCP 도구셋
-        MCPToolset(
-            connection_params=SseServerParams(
-                url="https://firebase-mcp-638331849453.asia-northeast3.run.app/mcp"
-            )
-        ),
-        # Email MCP 도구셋  
-        MCPToolset(
-            connection_params=SseServerParams(
-                url="https://estimate-email-mcp-638331849453.asia-northeast3.run.app/mcp"
-            )
-        )
+        FunctionTool(handle_address_request),
+        FunctionTool(handle_email_request),
+        FunctionTool(get_system_status)
     ]
 )
 
 print(f"✅ 인테리어 멀티 에이전트 시스템 초기화 완료: {interior_agent.name}")
-print(f"📦 등록된 도구 수: {len(interior_agent.tools) if hasattr(interior_agent, 'tools') else 'N/A'}")
+print(f"📦 등록된 라우팅 도구: {len(interior_agent.tools)}개")

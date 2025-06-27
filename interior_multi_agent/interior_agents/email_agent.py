@@ -1,21 +1,39 @@
 """
-📧 이메일 관리 에이전트 - ADK 공식 간단 방식
+📧 이메일 관리 하위 에이전트 - ADK 미니멀 방식
 """
 
 from google.adk.agents import LlmAgent
-from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, SseServerParams
+from google.adk.tools import FunctionTool
+from .mcp_client import email_client
 
-# Email MCP 도구셋 연결 (단 3줄!)
-email_toolset = MCPToolset(
-    connection_params=SseServerParams(
-        url="https://estimate-email-mcp-638331849453.asia-northeast3.run.app/mcp"
-    )
-)
+async def send_estimate_email(email: str, address: str, process_data: list):
+    """견적서 이메일 전송"""
+    return await email_client.call_tool("mcp_estimate-email_send_estimate_email", {
+        "email": email,
+        "address": address,
+        "process_data": process_data
+    })
 
-# 이메일 관리 에이전트 (단 5줄!)
+async def test_email_connection():
+    """이메일 서버 연결 테스트"""
+    return await email_client.call_tool("mcp_estimate-email_test_connection", {
+        "random_string": "test"
+    })
+
+async def get_email_server_info():
+    """이메일 서버 정보 조회"""
+    return await email_client.call_tool("mcp_estimate-email_get_server_info", {
+        "random_string": "info"
+    })
+
+# 이메일 관리 하위 에이전트
 email_agent = LlmAgent(
-    model='gemini-2.0-flash-thinking-exp-1219',
+    model='gemini-2.5-flash-lite-preview-06-17',
     name='email_manager',
-    instruction='견적서 이메일 전송 전문 에이전트입니다. 이메일 전송, 서버 상태 확인 등을 담당합니다.',
-    tools=[email_toolset]
+    instruction='견적서 이메일 전송 전문 에이전트. 이메일 전송, 서버 상태 확인을 담당합니다.',
+    tools=[
+        FunctionTool(send_estimate_email),
+        FunctionTool(test_email_connection),
+        FunctionTool(get_email_server_info)
+    ]
 ) 

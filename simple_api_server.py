@@ -61,6 +61,15 @@ async def health():
         "adk_available": ADK_AVAILABLE
     }
 
+@app.get("/status")
+async def status():
+    """서버 상태 확인 (리액트 호환)"""
+    return {
+        "mode": "ADK_Minimal" if ADK_AVAILABLE else "Error",
+        "status": "healthy",
+        "adk_available": ADK_AVAILABLE
+    }
+
 @app.post("/chat")
 async def chat(request: ChatRequest) -> ChatResponse:
     """채팅 API - ADK 에이전트와 연결"""
@@ -106,4 +115,4 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8505) 
+    uvicorn.run(app, host="0.0.0.0", port=8506) 

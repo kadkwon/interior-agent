@@ -1,13 +1,26 @@
 """
-🏠 인테리어 멀티 에이전트 시스템 - ADK 공식 간단 방식
+�� 인테리어 멀티 에이전트 시스템 - HTTP Direct 방식
+
+미니멀한 ADK 구조로 구현된 인테리어 프로젝트 관리 에이전트
 """
 
+# MCP HTTP Direct 클라이언트
+from .mcp_client import firebase_client, email_client
+
+# 하위 에이전트들
+from .address_management_agent import address_agent
+from .email_agent import email_agent
+
+# 루트 에이전트 (라우팅 시스템)
 from .agent_main import interior_agent
 
-__version__ = "3.0.0"
-__description__ = "ADK MCP 공식 방식 - 초간단 인테리어 멀티 에이전트 시스템"
+__all__ = [
+    'firebase_client',
+    'email_client', 
+    'address_agent',
+    'email_agent',
+    'interior_agent'
+]
 
-# 메인 에이전트만 익스포트
-__all__ = ["interior_agent"]
-
-print(f"📦 인테리어 에이전트 시스템 v{__version__} (초간단 버전) 로드 완료") 
+print("🚀 인테리어 멀티 에이전트 시스템 (HTTP Direct) 로드 완료")
+print(f"📦 에이전트: {len(__all__) - 2}개, 클라이언트: 2개") 

@@ -1,21 +1,40 @@
 """
-🏠 주소 관리 에이전트 - ADK 공식 간단 방식
+🏠 주소 관리 하위 에이전트 - ADK 미니멀 방식
 """
 
 from google.adk.agents import LlmAgent
-from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, SseServerParams
+from google.adk.tools import FunctionTool
+from .mcp_client import firebase_client
 
-# Firebase MCP 도구셋 연결 (단 3줄!)
-firebase_toolset = MCPToolset(
-    connection_params=SseServerParams(
-        url="https://firebase-mcp-638331849453.asia-northeast3.run.app/mcp"
-    )
-)
+async def search_addresses(query: str = "", limit: int = 20):
+    """주소 검색"""
+    return await firebase_client.call_tool("mcp_firebase_firestore_list_documents", {
+        "collection": "addressesJson",
+        "limit": limit
+    })
 
-# 주소 관리 에이전트 (단 5줄!)
+async def get_address_detail(document_id: str):
+    """주소 상세 조회"""
+    return await firebase_client.call_tool("mcp_firebase_firestore_get_document", {
+        "collection": "addressesJson",
+        "id": document_id
+    })
+
+async def add_new_address(description: str, data_json: str):
+    """새 주소 추가"""
+    return await firebase_client.call_tool("mcp_firebase_firestore_add_document", {
+        "collection": "addressesJson",
+        "data": {"description": description, "dataJson": data_json}
+    })
+
+# 주소 관리 하위 에이전트
 address_agent = LlmAgent(
-    model='gemini-2.0-flash-thinking-exp-1219',
+    model='gemini-2.5-flash-lite-preview-06-17',
     name='address_manager',
-    instruction='주소 관리 전문 에이전트입니다. Firebase의 addressesJson 컬렉션을 사용해서 주소를 검색, 추가, 수정, 삭제할 수 있습니다.',
-    tools=[firebase_toolset]
+    instruction='주소 관리 전문 에이전트. addressesJson 컬렉션에서 주소를 검색, 조회, 추가할 수 있습니다.',
+    tools=[
+        FunctionTool(search_addresses),
+        FunctionTool(get_address_detail),
+        FunctionTool(add_new_address)
+    ]
 ) 
