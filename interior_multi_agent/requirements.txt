@@ -1,30 +1,8 @@
-# Vertex AI Agent Engine deployment package requirements
-# Documentation recommendation: Pin package versions for reproducible builds
+# 인테리어 멀티 에이전트 시스템 - ADK MCP 직접 사용 방식
+# 최소한의 의존성만 포함
 
-# Core Agent Engine packages
-google-cloud-aiplatform[adk,agent_engines]>=1.50.0
-google-adk>=0.5.0
+# ADK 기본 요구사항
+google-adk
 
-# Cloud service integration
-google-cloud-secret-manager>=2.18.0
-google-cloud-storage>=2.10.0
-google-cloud-firestore>=2.13.0
-firebase-admin>=6.4.0
-
-# Basic dependencies
-python-dotenv>=1.0.0
-requests>=2.31.0
-aiohttp>=3.9.0
-python-dateutil>=2.8.2
-
-# Agent Engine documentation recommended packages
-cloudpickle>=2.2.1
-pydantic>=2.5.0
-
-# Database session support
-sqlalchemy>=2.0.0
-psycopg2-binary>=2.9.9
-greenlet>=3.0.0
-
-# Compatibility packages
-asyncio 
+# 기본 Python 패키지 (대부분 표준 라이브러리)
+# json, typing 등은 Python 내장 모듈이므로 별도 설치 불필요 

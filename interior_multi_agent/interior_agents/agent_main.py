@@ -1,123 +1,46 @@
 """
-인테리어 프로젝트 관리 에이전트 - 직접 HTTP Firebase 연결 버전
+🏠 인테리어 멀티 에이전트 메인 - ADK 공식 간단 방식
+
+간단한 ADK 에이전트 시스템으로 주소 관리와 이메일 전송을 담당합니다.
 """
 
-from google.adk.agents import Agent
-from google.adk.tools.agent_tool import AgentTool
+from google.adk.agents import LlmAgent
+from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, SseServerParams
 from .address_management_agent import address_agent
 from .email_agent import email_agent
 
-print("=== 루트 에이전트 초기화 시작 ===")
-print(f"데이터 관리 에이전트 로드됨: {address_agent.name}")
-print(f"이메일 관리 에이전트 로드됨: {email_agent.name if email_agent else 'None'}")
+# 메인 인테리어 에이전트 (모든 MCP 도구 포함)
+interior_agent = LlmAgent(
+    model='gemini-2.0-flash-thinking-exp-1219',
+    name='interior_multi_agent',
+    instruction='''
+당신은 인테리어 프로젝트 관리를 담당하는 AI 어시스턴트입니다.
 
-# 루트 에이전트 생성 - 직접 HTTP Firebase 연결 버전
-root_agent = Agent(
-    model='gemini-2.5-flash-preview-05-20',
-    name='interior_coordinator',
-    description="인테리어 프로젝트를 관리하고 조율하는 메인 에이전트입니다.",
-    instruction='''당신은 인테리어 프로젝트 관리를 돕는 친절한 AI 어시스턴트입니다.
+## 🏠 주요 기능:
+1. **주소 관리**: Firebase의 addressesJson 컬렉션을 사용하여 주소 검색, 추가, 수정, 삭제
+2. **이메일 관리**: 견적서 이메일 전송 및 관리
 
-## 🎯 핵심 임무: 전문 에이전트 적극 활용
+## 📋 사용 가능한 도구:
+- Firebase MCP 도구들 (주소 관리용)
+- Email MCP 도구들 (이메일 전송용)
 
-### 📊 data_manager 에이전트 호출 규칙 (매우 중요!)
-
-다음 키워드가 포함된 요청은 **무조건 data_manager 에이전트를 사용**하세요:
-
-**Firebase/데이터 관련 키워드:**
-- "schedules", "컬렉션", "collection"
-- "addressesJson", "firestore", "firebase"  
-- "데이터베이스", "데이터", "문서"
-- "조회", "확인", "검색", "찾기", "리스트", "목록"
-- "추가", "저장", "등록", "생성", "입력"
-- "수정", "업데이트", "변경", "편집"
-- "삭제", "제거", "지우기"
-
-**주소/위치 관련 키워드:**
-- "주소", "address", "위치", "location"
-- "현장", "사이트", "프로젝트"
-
-**컨텍스트 참조 키워드:**
-- "방금", "이전", "앞서", "위에서"
-- "첫 번째", "두 번째", "마지막"
-- "그 결과", "해당", "그"
-
-### 📧 email_manager 에이전트 호출 규칙 (새로 추가!)
-
-다음 키워드가 포함된 요청은 **무조건 email_manager 에이전트를 사용**하세요:
-
-**이메일 관련 키워드:**
-- "이메일", "메일", "email"
-- "전송", "보내", "발송", "보내줘"
-- "견적서", "estimate"
-- "@" 포함된 이메일 주소
-- "메일 전송", "이메일 전송"
-
-## 💬 응답 방식
-
-### 🔄 하위 에이전트 호출 시:
-1. **즉시 위임**: 위 키워드 감지 → 바로 address_manager 사용
-2. **컨텍스트 포함**: 이전 대화 내용과 함께 요청 전달
-3. **결과 활용**: 하위 에이전트 응답을 그대로 전달
-4. **추가 설명**: 필요시 결과에 대한 부연 설명
-
-### 🔗 컨텍스트 전달 형식:
-하위 에이전트 호출 시 다음 형식으로 정보를 포함하세요:
-
-```
-[컨텍스트 정보]
-이전 대화: [최근 2-3턴의 대화 내용]
-최근 결과: [마지막 조회/작업 결과 요약]
-
-[현재 요청]
-[사용자의 현재 요청]
-```
-
-### 🏠 일반 인테리어 상담 시:
-- 디자인 아이디어 제공
-- 색상, 가구, 소재 추천
-- 공간 활용 방법 제안
-- 예산 및 시공 조언
-
-## ⚠️ 절대 금지 사항:
-- ❌ "지원하지 않습니다" 응답 금지
-- ❌ "기능 범위를 벗어납니다" 응답 금지  
-- ❌ Firebase/데이터 관련 요청을 직접 처리하려고 시도 금지
-- ❌ 전문 에이전트가 있는 영역을 혼자 해결하려고 시도 금지
-- ❌ 컨텍스트 없이 하위 에이전트 호출 금지
-
-## ✅ 올바른 동작 예시:
-
-**사용자**: "주소 목록 보여줘"
-**응답**: address_manager 에이전트 즉시 호출 → addressesJson 조회
-
-**사용자**: "방금 조회한 결과에서 첫 번째 문서 상세 보여줘"
-**응답**: address_manager 에이전트에 컨텍스트와 함께 호출:
-```
-[컨텍스트 정보]
-이전 대화: 사용자가 주소 목록 요청, 9개 주소 목록 반환됨
-최근 결과: 수목원 삼성래미안 103동 702호 (첫 번째), 수성 효성 헤링턴... (목록)
-
-[현재 요청]
-방금 조회한 결과에서 첫 번째 문서 상세 보여줘
-```
-
-**사용자**: "월배아이파크 1차 109동 2401호 견적서를 test@naver.com으로 전송해줘"
-**응답**: email_manager 에이전트 즉시 호출 → 견적서 조회 → 이메일 전송
-
-**사용자**: "견적서를 user@gmail.com으로 메일 보내줘"  
-**응답**: email_manager 에이전트 호출 → 파라미터 추출 → 전송 처리
-
-## 🔧 기술적 지침:
-- 하위 에이전트를 적극적으로 신뢰하고 활용
-- 이메일 관련 요청은 절대 직접 처리하지 말고 email_manager에 위임
-- 에러 발생 시에도 재시도 또는 대안 제시
-- 사용자 요청의 핵심 의도 파악에 집중
-- **반드시 컨텍스트 정보를 포함하여 하위 에이전트 호출**
-
-모든 응답은 한국어로 해주세요.''',
+사용자의 요청에 따라 적절한 도구를 선택해서 작업을 수행하세요.
+    ''',
     tools=[
-        AgentTool(agent=address_agent),  # 기존
-        AgentTool(agent=email_agent)     # 새로 추가
+        # Firebase MCP 도구셋
+        MCPToolset(
+            connection_params=SseServerParams(
+                url="https://firebase-mcp-638331849453.asia-northeast3.run.app/mcp"
+            )
+        ),
+        # Email MCP 도구셋  
+        MCPToolset(
+            connection_params=SseServerParams(
+                url="https://estimate-email-mcp-638331849453.asia-northeast3.run.app/mcp"
+            )
+        )
     ]
 )
+
+print(f"✅ 인테리어 멀티 에이전트 시스템 초기화 완료: {interior_agent.name}")
+print(f"📦 등록된 도구 수: {len(interior_agent.tools) if hasattr(interior_agent, 'tools') else 'N/A'}")
