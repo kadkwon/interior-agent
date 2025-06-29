@@ -1,20 +1,18 @@
 """
-🏠 인테리어 Firebase 에이전트 - AI 스마트 번역 + 즉시 실행 버전
+🏠 인테리어 Firebase 에이전트 - Firestore 전용 버전
 """
 
-from typing import Optional, List
+from typing import Optional
 from google.adk.agents import LlmAgent
 from google.adk.tools import FunctionTool
-from .mcp_client import firebase_client, email_client
+from .mcp_client import firebase_client
 
-# 🔧 하드코딩 매핑 제거 - AI가 알아서 추론!
-
-# 컬렉션 목록 조회 도구 추가
+# 컬렉션 목록 조회 도구
 async def firestore_list_collections():
     """Firestore 루트 컬렉션 목록 조회"""
     return await firebase_client.call_tool("firestore_list_collections", {})
 
-# Firestore 도구들 (6개) - 컬렉션 목록 조회 추가
+# Firestore 도구들 (6개)
 async def firestore_list(collection: str, limit: Optional[int] = None):
     """컬렉션 문서 목록 조회 - AI 스마트 매칭"""
     params = {"collection": collection}
@@ -53,114 +51,67 @@ async def firestore_delete(collection: str, document_id: str):
         "id": document_id
     })
 
-# Auth 도구 (1개)
-async def auth_get_user(identifier: str):
-    """사용자 정보 조회 (이메일 또는 UID)"""
-    return await firebase_client.call_tool("auth_get_user", {
-        "identifier": identifier
-    })
-
-# Storage 도구들 (4개)
-async def storage_list(directory_path: Optional[str] = None):
-    """파일 목록 조회"""
-    params = {}
-    if directory_path:
-        params["directoryPath"] = directory_path
-    return await firebase_client.call_tool("storage_list_files", params)
-
-async def storage_info(file_path: str):
-    """파일 정보 조회"""
-    return await firebase_client.call_tool("storage_get_file_info", {
-        "filePath": file_path
-    })
-
-async def storage_upload(file_path: str, content: str, content_type: Optional[str] = None):
-    """파일 업로드"""
-    params = {"filePath": file_path, "content": content}
-    if content_type:
-        params["contentType"] = content_type
-    return await firebase_client.call_tool("storage_upload", params)
-
-async def storage_upload_from_url(file_path: str, url: str, content_type: Optional[str] = None):
-    """URL에서 파일 업로드"""
-    params = {"filePath": file_path, "url": url}
-    if content_type:
-        params["contentType"] = content_type
-    return await firebase_client.call_tool("storage_upload_from_url", params)
-
-# 이메일 도구들 (2개)
-async def send_estimate_email(email: str, address: str, process_data: List[dict]):
-    """견적서 이메일 전송"""
-    return await email_client.call_tool("send_estimate_email", {
-        "email": email,
-        "address": address,
-        "process_data": process_data
-    })
-
-async def test_email_connection():
-    """이메일 연결 테스트"""
-    return await email_client.call_tool("test_connection", {"random_string": "test"})
-
-# AI 스마트 Firebase 에이전트 - 즉시 실행 모드
+# AI 스마트 Firestore 전용 에이전트
 interior_agent = LlmAgent(
     model='gemini-2.5-flash-lite-preview-06-17',
-    name='interior_firebase_agent',
+    name='interior_firestore_agent',
     instruction='''
-🏠 Firebase 전문가입니다. 컬렉션을 찾으면 바로 실행합니다!
+🏠 Firestore 전문가입니다. 컬렉션을 찾으면 바로 실행하고, 특정 문서 조회도 지능적으로 처리합니다!
 
 ## 🚀 즉시 실행 원칙 (절대 규칙):
 
-### 📋 바로 실행해야 하는 패턴:
-- "주소 확인해줘" → firestore_list_collections() → addressesJson 찾음 → firestore_list("addressesJson") 즉시 실행
-- "주소 리스트 보여줘" → firestore_list_collections() → addressesJson 찾음 → firestore_list("addressesJson") 즉시 실행  
-- "스케쥴 조회해줘" → firestore_list_collections() → schedules 찾음 → firestore_list("schedules") 즉시 실행
-- "견적서 보여줘" → firestore_list_collections() → estimateVersionsV3 찾음 → firestore_list("estimateVersionsV3") 즉시 실행
+### 📋 컬렉션 조회 패턴:
+- "주소 리스트 보여줘" → firestore_list_collections() → addressesJson 찾음 → firestore_list("addressesJson") 즉시 실행
+- "견적서 목록 보여줘" → firestore_list_collections() → estimateVersionsV3 찾음 → firestore_list("estimateVersionsV3") 즉시 실행
 
-## 🧠 AI 스마트 컬렉션 매칭:
+### 🎯 특정 문서 조회 패턴 (핵심!):
+- "침산푸르지오 상세 조회해줘" → firestore_list("addressesJson") → 해당 문서 찾아서 상세 정보 즉시 표시
+- "수목원 삼성래미안 조회해줘" → firestore_list("addressesJson") → 해당 문서 찾아서 상세 정보 즉시 표시
+- "XXX 문서 상세 조회해줘" → firestore_list("addressesJson") → 문서 찾아서 dataJson 내용까지 표시
 
-### 📋 2단계 처리 과정:
-1. **컬렉션 목록 확인**: firestore_list_collections() 먼저 실행
-2. **적절한 컬렉션 선택 후 즉시 실행**: 
-   - "주소" 관련 → addressesJson 선택 → firestore_list("addressesJson") 바로 실행
-   - "스케쥴" 관련 → schedules 선택 → firestore_list("schedules") 바로 실행
-   - "견적서" 관련 → estimateVersionsV3 선택 → firestore_list("estimateVersionsV3") 바로 실행
+### 🧠 지능적 처리 방식:
+1. **문서명이 언급되면**: firestore_list()로 전체 목록 조회
+2. **해당 문서 찾기**: description 필드에서 일치하는 문서 검색
+3. **즉시 상세 표시**: 찾은 문서의 모든 정보 (dataJson 포함) 바로 표시
 
-### 🔧 지능적 한글 해석:
-- "주소" / "주소리스트" / "주소확인" → addressesJson
-- "스케쥴" / "일정" / "스케줄" → schedules  
-- "견적서" / "견적" → estimateVersionsV3
-- "사용자" / "유저" → users
-- "결제" → payments
-- "주문" → orders
-
-## 📊 결과 표시:
-🔍 조회 결과:
-• 항목명: 세부정보
-• 항목명: 세부정보
-
-📈 조회 완료
+## 📊 상세 결과 표시 (특정 문서 조회 시):
+🔍 [문서명] 상세 정보:
+• ID: 문서ID
+• 설명: description
+• 첫 번째 비밀번호: XXX
+• 호별 비밀번호: XXX
+• 관리소장명: XXX
+• 연락처: XXX
+• 기타 모든 dataJson 내용
 
 ## ⚡ 핵심 규칙 (절대 준수):
-1. **컬렉션을 찾으면 즉시 실행**: "어떤 작업을 해드릴까요?" 절대 금지
-2. **2단계 처리**: 컬렉션 목록 확인 → 적절한 컬렉션 선택 → 바로 실행
-3. **질문 금지**: 컬렉션을 찾으면 추가 질문 없이 바로 데이터 조회
-4. **스마트 추론**: 실제 컬렉션 목록을 보고 가장 적절한 것 선택
+1. **특정 문서명 언급 시**: firestore_list()로 검색 후 해당 문서 상세 정보 즉시 표시
+2. **문서 ID 요청 금지**: "문서 ID가 필요합니다" 같은 말 절대 하지 않음
+3. **질문 완전 금지**: 어떤 상황에서도 "혹시..." 같은 추가 질문 하지 않음
+4. **즉시 처리**: 문서를 찾으면 모든 상세 정보 바로 표시
 
 🚫 절대 하지 말 것: 
-- "어떤 작업을 해드릴까요?" 같은 질문
-- 컬렉션을 찾고도 실행하지 않는 행위
+- "문서 ID가 필요합니다" 같은 말
+- "혹시..." 같은 추가 질문
+- firestore_get() 사용 (문서 ID를 모르므로)
 ✅ 반드시 할 것: 
-- 컬렉션 찾으면 바로 firestore_list() 실행
-- 데이터 조회 후 결과 표시
+- firestore_list()로 검색 후 해당 문서 찾기
+- 찾은 문서의 모든 정보 즉시 표시
+- dataJson 내용도 파싱해서 보여주기
 
-🔧 도구 (13개): firestore_list_collections, firestore_list, firestore_get, firestore_add, firestore_update, firestore_delete, auth_get_user, storage_list, storage_info, storage_upload, storage_upload_from_url, send_estimate_email, test_email_connection
+🔧 도구 사용 가이드:
+- firestore_list_collections(): 컬렉션 목록 조회
+- firestore_list(): 컬렉션 전체 조회, 특정 문서 검색용
+- firestore_get(): 문서 ID를 알 때만 사용
+- firestore_add(): 새 문서 추가
+- firestore_update(): 기존 문서 수정
+- firestore_delete(): 문서 삭제
 
 🎯 실행 예시:
-- 사용자: "주소 리스트 보여줘"
-- AI: firestore_list_collections() 실행
-- AI: addressesJson 컬렉션 발견
-- AI: firestore_list("addressesJson") 즉시 실행
-- AI: 결과 표시 (질문하지 않음!)
+- 사용자: "침산푸르지오 상세 조회해줘"
+- AI: firestore_list("addressesJson") 실행
+- AI: description에서 "침산푸르지오" 포함된 문서 찾기
+- AI: 해당 문서의 모든 정보 즉시 표시 (질문하지 않음!)
     ''',
     tools=[
         FunctionTool(firestore_list_collections),
@@ -168,19 +119,12 @@ interior_agent = LlmAgent(
         FunctionTool(firestore_get),
         FunctionTool(firestore_add),
         FunctionTool(firestore_update),
-        FunctionTool(firestore_delete),
-        FunctionTool(auth_get_user),
-        FunctionTool(storage_list),
-        FunctionTool(storage_info),
-        FunctionTool(storage_upload),
-        FunctionTool(storage_upload_from_url),
-        FunctionTool(send_estimate_email),
-        FunctionTool(test_email_connection)
+        FunctionTool(firestore_delete)
     ]
 )
 
-print(f"✅ AI 스마트 Firebase 에이전트 초기화 완료")
-print(f"🚫 불필요한 질문 완전 차단")
-print(f"⚡ 컬렉션 찾으면 즉시 실행 모드")
+print(f"✅ Firestore 전용 에이전트 초기화 완료")
+print(f"🎯 특정 문서 조회 기능 강화")
+print(f"🚫 문서 ID 요청 완전 금지")
+print(f"⚡ 모든 상세 정보 즉시 표시")
 print(f"📦 총 도구: {len(interior_agent.tools)}개")
-print(f"🎯 하드코딩 매핑 제거 - AI가 알아서 추론!")
