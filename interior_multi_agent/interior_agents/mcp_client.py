@@ -172,5 +172,6 @@ class MCPClient:
         
         return False
 
-# Firebase MCP 클라이언트만 유지
-firebase_client = MCPClient("https://firebase-mcp-638331849453.asia-northeast3.run.app/mcp") 
+# Firebase와 Email MCP 클라이언트
+firebase_client = MCPClient("https://firebase-mcp-638331849453.asia-northeast3.run.app/mcp")
+email_client = MCPClient("https://estimate-email-mcp-638331849453.asia-northeast3.run.app/mcp") 
