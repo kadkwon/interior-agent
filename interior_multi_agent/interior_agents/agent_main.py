@@ -1,5 +1,5 @@
 """
-🏠 인테리어 통합 에이전트 - Firebase + Email 통합 버전
+🏠 인테리어 통합 에이전트 - Firebase + Email 통합 버전 (라우팅 전담)
 """
 
 import json
@@ -7,124 +7,7 @@ from typing import Optional, Dict, Any
 from google.adk.agents import LlmAgent
 from google.adk.tools import FunctionTool
 from .mcp_client import firebase_client, email_client
-
-def format_korean_response(result: Dict[str, Any], operation_type: str) -> str:
-    """MCP 응답을 한글로 가독성 좋게 포맷팅"""
-    try:
-        if "error" in result:
-            return f"❌ 오류 발생: {result['error']}"
-        
-        # MCP 응답에서 실제 데이터 추출
-        actual_data = None
-        if "content" in result and result["content"]:
-            content_item = result["content"][0]
-            if "text" in content_item:
-                try:
-                    actual_data = json.loads(content_item["text"])
-                except:
-                    return f"❌ JSON 파싱 오류: {content_item['text'][:100]}..."
-        
-        if not actual_data:
-            return f"❌ 응답 데이터가 없습니다: {str(result)[:100]}..."
-        
-        if operation_type == "list_collections":
-            collections = actual_data.get("collections", [])
-            if not collections:
-                return "📂 사용 가능한 컬렉션이 없습니다."
-            
-            formatted = "📂 **사용 가능한 컬렉션 목록:**\n"
-            for i, collection in enumerate(collections, 1):
-                collection_id = collection.get("id", collection) if isinstance(collection, dict) else collection
-                formatted += f"   {i}. {collection_id}\n"
-            return formatted
-        
-        elif operation_type == "list_documents":
-            documents = actual_data.get("documents", [])
-            if not documents:
-                return "📄 해당 컬렉션에 문서가 없습니다."
-            
-            formatted = f"📄 **문서 목록 ({len(documents)}개):**\n\n"
-            for i, doc in enumerate(documents, 1):
-                doc_id = doc.get("id", "ID 없음")
-                description = doc.get("data", {}).get("description", "설명 없음")
-                
-                formatted += f"**{i}. {description}**\n"
-                formatted += f"   📝 문서 ID: {doc_id}\n"
-                
-                # dataJson 파싱
-                data_json = doc.get("data", {}).get("dataJson")
-                if data_json:
-                    try:
-                        data = json.loads(data_json)
-                        if "firstFloorPassword" in data:
-                            formatted += f"   🔑 1층 비밀번호: {data['firstFloorPassword']}\n"
-                        if "unitPassword" in data:
-                            formatted += f"   🏠 호별 비밀번호: {data['unitPassword']}\n"
-                        if "managerName" in data:
-                            formatted += f"   👤 관리소장: {data['managerName']}\n"
-                        if "phoneNumber" in data:
-                            formatted += f"   📞 연락처: {data['phoneNumber']}\n"
-                    except:
-                        pass
-                formatted += "\n"
-            return formatted
-        
-        elif operation_type == "get_document":
-            doc = actual_data.get("document")
-            if not doc:
-                return "📄 해당 문서를 찾을 수 없습니다."
-            
-            doc_id = doc.get("id", "ID 없음")
-            description = doc.get("data", {}).get("description", "설명 없음")
-            
-            formatted = f"🔍 **{description} 상세 정보:**\n\n"
-            formatted += f"📝 **문서 ID:** {doc_id}\n"
-            formatted += f"📄 **설명:** {description}\n\n"
-            
-            # dataJson 상세 파싱
-            data_json = doc.get("data", {}).get("dataJson")
-            if data_json:
-                try:
-                    data = json.loads(data_json)
-                    formatted += "🏠 **상세 정보:**\n"
-                    
-                    if "firstFloorPassword" in data:
-                        formatted += f"   🔑 1층 비밀번호: {data['firstFloorPassword']}\n"
-                    if "unitPassword" in data:
-                        formatted += f"   🏠 호별 비밀번호: {data['unitPassword']}\n"
-                    if "managerName" in data:
-                        formatted += f"   👤 관리소장: {data['managerName']}\n"
-                    if "phoneNumber" in data:
-                        formatted += f"   📞 연락처: {data['phoneNumber']}\n"
-                    if "address" in data:
-                        formatted += f"   📍 주소: {data['address']}\n"
-                    if "buildingType" in data:
-                        formatted += f"   🏢 건물 유형: {data['buildingType']}\n"
-                    if "date" in data and data["date"]:
-                        formatted += f"   📅 등록일: {data['date']}\n"
-                    
-                    # 기타 정보들
-                    for key, value in data.items():
-                        if key not in ["firstFloorPassword", "unitPassword", "managerName", "phoneNumber", "address", "buildingType", "date"] and value:
-                            formatted += f"   📋 {key}: {value}\n"
-                            
-                except Exception as e:
-                    formatted += f"   ⚠️ 상세 정보 파싱 중 오류: {str(e)}\n"
-            
-            return formatted
-        
-        elif operation_type in ["add_document", "update_document", "delete_document"]:
-            if operation_type == "add_document":
-                return "✅ 문서가 성공적으로 추가되었습니다."
-            elif operation_type == "update_document":
-                return "✅ 문서가 성공적으로 수정되었습니다."
-            else:
-                return "✅ 문서가 성공적으로 삭제되었습니다."
-        
-        return "✅ 작업이 완료되었습니다."
-        
-    except Exception as e:
-        return f"❌ 응답 처리 중 오류 발생: {str(e)}"
+from .formatter_agent import format_korean_response
 
 # 컬렉션 목록 조회 도구
 async def firestore_list_collections():
@@ -242,7 +125,7 @@ async def get_email_server_info():
         return f"❌ 서버 정보 조회 실패: {result['error']}"
     return f"📧 이메일 서버 정보: {result}"
 
-# AI 스마트 통합 에이전트 - Firebase + Email
+# AI 스마트 통합 에이전트 - Firebase + Email (라우팅 전담)
 interior_agent = LlmAgent(
     model='gemini-2.5-flash-lite-preview-06-17',
     name='interior_unified_agent',
@@ -347,11 +230,11 @@ interior_agent = LlmAgent(
     ]
 )
 
-print(f"✅ 통합 에이전트 초기화 완료 (Firebase + Email)")
+print(f"✅ 통합 에이전트 초기화 완료 (Firebase + Email) - 라우팅 전담")
 print(f"🔍 Firebase 데이터 조회 기능 (6개 도구)")
 print(f"📧 Email 전송 기능 (3개 도구)")
+print(f"🎨 포맷팅 기능은 formatter_agent로 분리")
 print(f"🎯 통합 명령 처리: 'XX 주소를 YY@email.com으로 보내줘' 가능")
 print(f"🧠 맥락 유지 강화: 이메일 주소만 입력해도 직전 주소와 자동 연결")
 print(f"⚡ Google AI 완전 호환 (기본값 경고 해결)")
-print(f"🔧 processData 오류 해결 + 한글 가독성 응답")
 print(f"📦 총 도구: {len(interior_agent.tools)}개")
