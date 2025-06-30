@@ -9,10 +9,19 @@ from google.adk.tools import FunctionTool
 from .mcp_client import firebase_client, email_client
 from .formatter_agent import format_korean_response
 
+# 🔄 현재 세션 추적 (글로벌)
+current_session_id = None
+
+def set_current_session(session_id: str):
+    """현재 ADK 세션 ID 설정"""
+    global current_session_id
+    current_session_id = session_id
+    print(f"🔄 현재 세션 설정: {session_id}")
+
 # 컬렉션 목록 조회 도구
 async def firestore_list_collections():
     """Firestore 루트 컬렉션 목록 조회"""
-    result = await firebase_client.call_tool("firestore_list_collections", {})
+    result = await firebase_client.call_tool("firestore_list_collections", {}, current_session_id)
     return format_korean_response(result, "list_collections")
 
 # Firestore 도구들 (6개)
@@ -24,7 +33,7 @@ async def firestore_list(collection: str, limit: Optional[int] = None):
     else:
         params["limit"] = 20
     
-    result = await firebase_client.call_tool("firestore_list_documents", params)
+    result = await firebase_client.call_tool("firestore_list_documents", params, current_session_id)
     return format_korean_response(result, "list_documents")
 
 async def firestore_get(collection: str, document_id: str):
@@ -32,7 +41,7 @@ async def firestore_get(collection: str, document_id: str):
     result = await firebase_client.call_tool("firestore_get_document", {
         "collection": collection,
         "id": document_id
-    })
+    }, current_session_id)
     return format_korean_response(result, "get_document")
 
 async def firestore_add(collection: str, data: dict):
@@ -40,7 +49,7 @@ async def firestore_add(collection: str, data: dict):
     result = await firebase_client.call_tool("firestore_add_document", {
         "collection": collection,
         "data": data
-    })
+    }, current_session_id)
     return format_korean_response(result, "add_document")
 
 async def firestore_update(collection: str, document_id: str, data: dict):
@@ -49,7 +58,7 @@ async def firestore_update(collection: str, document_id: str, data: dict):
         "collection": collection,
         "id": document_id,
         "data": data
-    })
+    }, current_session_id)
     return format_korean_response(result, "update_document")
 
 async def firestore_delete(collection: str, document_id: str):
@@ -57,7 +66,7 @@ async def firestore_delete(collection: str, document_id: str):
     result = await firebase_client.call_tool("firestore_delete_document", {
         "collection": collection,
         "id": document_id
-    })
+    }, current_session_id)
     return format_korean_response(result, "delete_document")
 
 # Email 하위 에이전트 함수들 - Google AI 완전 호환 버전
@@ -101,7 +110,7 @@ async def send_estimate_email(email: str, address: str, process_data: Optional[s
         "email": email,
         "address": address,
         "process_data": data_to_send
-    })
+    }, current_session_id)
     
     if "error" in result:
         return f"❌ 이메일 전송 실패: {result['error']}"
@@ -111,7 +120,7 @@ async def test_email_connection():
     """이메일 서버 연결 테스트"""
     result = await email_client.call_tool("test_connection", {
         "random_string": "test"
-    })
+    }, current_session_id)
     if "error" in result:
         return f"❌ 이메일 서버 연결 실패: {result['error']}"
     return "✅ 이메일 서버 연결 성공"
@@ -120,7 +129,7 @@ async def get_email_server_info():
     """이메일 서버 정보 조회"""
     result = await email_client.call_tool("get_server_info", {
         "random_string": "info"
-    })
+    }, current_session_id)
     if "error" in result:
         return f"❌ 서버 정보 조회 실패: {result['error']}"
     return f"📧 이메일 서버 정보: {result}"
@@ -133,12 +142,22 @@ interior_agent = LlmAgent(
 🏠 인테리어 통합 전문가입니다! **Firebase 데이터 조회**와 **이메일 전송**을 모두 처리합니다.
 모든 응답을 **한글**로 **가독성 좋게** 제공합니다!
 
+## 🚨 현재 Firebase 연결 문제 해결 방법:
+
+### Firebase MCP 서버 연결 오류 시:
+- **문제**: "주소 리스트 보여줘" 요청 시 타임아웃 발생
+- **원인**: Firebase MCP 서버의 세션 ID 처리 문제
+- **임시 해결책**: 
+  1. "Firebase 연결에 일시적인 문제가 있습니다" 안내
+  2. 대안으로 수동 주소 입력 방법 제안
+  3. 관리자에게 Firebase MCP 서버 재시작 권장
+
 ## 📋 핵심 기능들:
 
-### 1. 🔍 Firebase 데이터 조회:
-- "주소 리스트 보여줘" → firestore_list("addressesJson") 즉시 실행
-- "침산푸르지오 상세 조회해줘" → 해당 문서 한글 상세 정보 표시
-- "견적서 목록 보여줘" → firestore_list("estimateVersionsV3") 즉시 실행
+### 1. 🔍 Firebase 데이터 조회 (연결 문제 시 대안 제시):
+- "주소 리스트 보여줘" → ⚠️ 연결 문제 시 "현재 Firebase 연결에 문제가 있어 주소 리스트를 불러올 수 없습니다. 원하시는 주소를 직접 입력해주시면 견적서 작성을 도와드리겠습니다."
+- "침산푸르지오 상세 조회해줘" → ⚠️ 연결 문제 시 대안 방법 제시
+- "견적서 목록 보여줘" → ⚠️ 연결 문제 시 수동 입력 방법 안내
 
 ### 2. 📧 이메일 전송 (통합 명령):
 - "침산푸르지오 정보를 aaa@naver.com으로 보내줘" → 

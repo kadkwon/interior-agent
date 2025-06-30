@@ -178,6 +178,13 @@ async def chat(request: ChatRequest) -> ChatResponse:
             parts=[types.Part(text=context_message)]
         )
         
+        # 🔄 MCP 클라이언트에 현재 세션 ID 설정
+        try:
+            from interior_multi_agent.interior_agents.agent_main import set_current_session
+            set_current_session(session_id)
+        except Exception as e:
+            print(f"⚠️ 세션 ID 설정 실패 (계속 진행): {e}")
+        
         # 🎯 루트에이전트 실행 (더미 세션 사용)
         response_text = ""
         final_response = None
