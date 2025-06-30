@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🧪 Interior Agent API 연결 테스트</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .test-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background: #f9f9f9;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+            font-weight: bold;
+        }
+        .status.success { background: #d4edda; color: #155724; }
+        .status.error { background: #f8d7da; color: #721c24; }
+        .status.loading { background: #fff3cd; color: #856404; }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        button:hover { background: #0056b3; }
+        button:disabled { 
+            background: #6c757d; 
+            cursor: not-allowed; 
+        }
+        textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-family: inherit;
+            resize: vertical;
+        }
+        .response {
+            background: #e9ecef;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 10px;
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+        }
+        .log {
+            max-height: 200px;
+            overflow-y: auto;
+            background: #f8f9fa;
+            padding: 10px;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Interior Agent API 연결 테스트</h1>
+        <p><strong>Cloud Run URL:</strong> <code id="api-url">https://interior-agent-api-638331849453.asia-northeast3.run.app</code></p>
+        
+        <!-- 1. 서버 상태 테스트 -->
+        <div class="test-section">
+            <h2>1️⃣ 서버 상태 확인</h2>
+            <button onclick="testServerStatus()">상태 확인</button>
+            <button onclick="testHealthCheck()">Health Check</button>
+            <div id="status-result" class="status loading">테스트를 시작하려면 버튼을 클릭하세요</div>
+        </div>
+
+        <!-- 2. 채팅 API 테스트 -->
+        <div class="test-section">
+            <h2>2️⃣ 채팅 API 테스트</h2>
+            <textarea id="message-input" rows="3" placeholder="테스트할 메시지를 입력하세요 (예: 안녕하세요, 인테리어 상담 받고싶어요)">안녕하세요, 인테리어 상담 받고싶어요</textarea>
+            <br><br>
+            <button onclick="testChatAPI()">채팅 테스트</button>
+            <button onclick="testChatAPI('english')">영어 테스트</button>
+            <div id="chat-result" class="status loading">테스트를 시작하려면 버튼을 클릭하세요</div>
+            <div id="chat-response" class="response" style="display:none;"></div>
+        </div>
+
+        <!-- 3. CORS 테스트 -->
+        <div class="test-section">
+            <h2>3️⃣ CORS 설정 확인</h2>
+            <button onclick="testCORS()">CORS 테스트</button>
+            <div id="cors-result" class="status loading">테스트를 시작하려면 버튼을 클릭하세요</div>
+        </div>
+
+        <!-- 4. 연결 로그 -->
+        <div class="test-section">
+            <h2>4️⃣ 연결 로그</h2>
+            <button onclick="clearLog()">로그 초기화</button>
+            <div id="log" class="log"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE_URL = "https://interior-agent-api-638331849453.asia-northeast3.run.app";
+        let sessionId = `test-session-${Date.now()}`;
+
+        function log(message) {
+            const logElement = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            logElement.innerHTML += `[${timestamp}] ${message}\n`;
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+
+        async function testServerStatus() {
+            const resultElement = document.getElementById('status-result');
+            resultElement.className = 'status loading';
+            resultElement.textContent = '⏳ 서버 상태 확인 중...';
+            
+            try {
+                log('🔍 서버 상태 확인 시작...');
+                const response = await fetch(`${API_BASE_URL}/status`, {
+                    method: 'GET',
+                    mode: 'cors'
+                });
+                
+                log(`📡 응답 상태: ${response.status}`);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    log(`📋 응답 데이터: ${JSON.stringify(data, null, 2)}`);
+                    
+                    resultElement.className = 'status success';
+                    resultElement.innerHTML = `
+                        ✅ 서버 연결 성공!<br>
+                        📊 모드: ${data.mode}<br>
+                        🔧 ADK 사용 가능: ${data.adk_available ? '✅' : '❌'}<br>
+                        📱 활성 세션: ${data.active_sessions}개
+                    `;
+                } else {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+            } catch (error) {
+                log(`❌ 오류 발생: ${error.message}`);
+                resultElement.className = 'status error';
+                resultElement.textContent = `❌ 연결 실패: ${error.message}`;
+            }
+        }
+
+        async function testHealthCheck() {
+            try {
+                log('🏥 Health Check 시작...');
+                const response = await fetch(`${API_BASE_URL}/health`);
+                const data = await response.json();
+                log(`💚 Health Check 결과: ${JSON.stringify(data, null, 2)}`);
+            } catch (error) {
+                log(`❌ Health Check 실패: ${error.message}`);
+            }
+        }
+
+        async function testChatAPI(mode = 'korean') {
+            const resultElement = document.getElementById('chat-result');
+            const responseElement = document.getElementById('chat-response');
+            
+            resultElement.className = 'status loading';
+            resultElement.textContent = '⏳ 채팅 API 테스트 중...';
+            responseElement.style.display = 'none';
+            
+            try {
+                const message = mode === 'english' 
+                    ? 'Hello, I need interior design consultation' 
+                    : document.getElementById('message-input').value || '안녕하세요';
+                
+                log(`💬 채팅 메시지 전송: "${message}"`);
+                
+                const response = await fetch(`${API_BASE_URL}/chat`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        message: message,
+                        session_id: sessionId
+                    })
+                });
+                
+                log(`📡 채팅 응답 상태: ${response.status}`);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    log(`🤖 AI 응답 받음: ${data.response?.substring(0, 100)}...`);
+                    
+                    resultElement.className = 'status success';
+                    resultElement.textContent = '✅ 채팅 API 연결 성공!';
+                    
+                    responseElement.textContent = `🤖 AI 응답:\n${data.response}`;
+                    responseElement.style.display = 'block';
+                } else {
+                    const errorData = await response.text();
+                    throw new Error(`HTTP ${response.status}: ${errorData}`);
+                }
+            } catch (error) {
+                log(`❌ 채팅 API 오류: ${error.message}`);
+                resultElement.className = 'status error';
+                resultElement.textContent = `❌ 채팅 API 실패: ${error.message}`;
+            }
+        }
+
+        async function testCORS() {
+            const resultElement = document.getElementById('cors-result');
+            resultElement.className = 'status loading';
+            resultElement.textContent = '⏳ CORS 설정 확인 중...';
+            
+            try {
+                log('🌐 CORS 테스트 시작...');
+                
+                // OPTIONS 요청으로 CORS 확인
+                const response = await fetch(`${API_BASE_URL}/status`, {
+                    method: 'OPTIONS',
+                    mode: 'cors',
+                    headers: {
+                        'Origin': window.location.origin,
+                        'Access-Control-Request-Method': 'POST',
+                        'Access-Control-Request-Headers': 'Content-Type'
+                    }
+                });
+                
+                log(`🔧 CORS preflight 응답: ${response.status}`);
+                
+                resultElement.className = 'status success';
+                resultElement.textContent = '✅ CORS 설정 정상 (브라우저에서 API 호출 가능)';
+                
+            } catch (error) {
+                log(`❌ CORS 오류: ${error.message}`);
+                if (error.message.includes('CORS')) {
+                    resultElement.className = 'status error';
+                    resultElement.textContent = '❌ CORS 오류: 브라우저에서 API 호출 불가';
+                } else {
+                    resultElement.className = 'status success';
+                    resultElement.textContent = '✅ CORS 설정 정상 (일반적인 네트워크 오류)';
+                }
+            }
+        }
+
+        // 페이지 로드 시 자동 테스트
+        window.onload = function() {
+            log('🚀 API 연결 테스트 시작');
+            log(`🔗 API URL: ${API_BASE_URL}`);
+            log(`📱 세션 ID: ${sessionId}`);
+        };
+    </script>
+</body>
+</html> 

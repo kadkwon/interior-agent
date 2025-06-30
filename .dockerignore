@@ -1,0 +1,73 @@
+# Git 관련
+.git
+.gitignore
+.gitattributes
+
+# Python 캐시
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# 가상환경
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 문서
+docs/
+*.md
+README*
+
+# 로그
+*.log
+logs/
+
+# 테스트
+tests/
+test_*
+*_test.py
+pytest_cache/
+.coverage
+htmlcov/
+
+# 개발용 파일
+.env.example
+.env.local
+.env.development
+docker-compose.yml
+docker-compose.*.yml
+
+# 백업 파일
+*.backup
+*.bak
+*_backup*
+
+# 임시 파일
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db 
