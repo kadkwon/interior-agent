@@ -3,7 +3,7 @@
 """
 
 import json
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from google.adk.agents import LlmAgent
 from google.adk.tools import FunctionTool
 from .mcp_client import firebase_client, email_client
@@ -38,10 +38,14 @@ async def firestore_list(collection: str, limit: Optional[int] = None):
 
 async def firestore_get(collection: str, document_id: str):
     """특정 문서 조회 - 한글 상세정보 버전"""
+    print(f"🔍 [DEBUG] firestore_get 호출: collection={collection}, document_id='{document_id}'")
+    
     result = await firebase_client.call_tool("firestore_get_document", {
         "collection": collection,
         "id": document_id
     }, current_session_id)
+    
+    print(f"🔍 [DEBUG] MCP 서버 응답: {str(result)[:200]}...")
     return format_korean_response(result, "get_document")
 
 async def firestore_add(collection: str, data: dict):
@@ -147,6 +151,7 @@ interior_agent = LlmAgent(
 ### 1. 🔍 Firebase 데이터 조회 (무조건 도구 결과 표시):
 - "주소 리스트 보여줘" → firestore_list("addressesJson") 실행 후 **반드시 도구의 결과를 그대로 반환**
 - "견적서 목록 보여줘" → firestore_list("estimateVersionsV3") 실행 후 **반드시 도구의 결과를 그대로 반환**
+- "월배아이파크 1차 109동 2401호_2차 보여줘" → firestore_get("estimateVersionsV3", "월배아이파크 1차 109동 2401호_2차") 실행
 - 도구 함수가 성공적으로 데이터를 반환하면 **절대로 추가 설명이나 안내 없이** 그 결과를 직접 출력
 
 ### 2. 📧 이메일 전송 (통합 명령):
@@ -207,7 +212,7 @@ interior_agent = LlmAgent(
 2. **추가 설명 금지**: 도구 결과가 있으면 "더 필요하신가요?" 같은 추가 멘트 절대 하지 않음
 3. **통합 명령 처리**: "XX를 YY@email.com으로 보내줘" → 데이터 조회 후 즉시 전송
 4. **맥락 유지**: 이메일 주소만 입력되면 직전 주소와 자동 연결
-5. **문서 ID 요청 금지**: 어떤 상황에서도 문서 ID 요청하지 않음
+5. **정확한 문서 ID 사용**: 문서 상세 조회 시 리스트에서 보여진 정확한 ID 사용
 6. **질문 완전 금지**: "혹시..." 또는 "어떤 작업을..." 같은 추가 질문 하지 않음
 7. **즉시 처리**: 찾은 데이터로 바로 작업 수행
 
@@ -249,3 +254,4 @@ print(f"🎯 통합 명령 처리: 'XX 주소를 YY@email.com으로 보내줘' �
 print(f"🧠 맥락 유지 강화: 이메일 주소만 입력해도 직전 주소와 자동 연결")
 print(f"⚡ Google AI 완전 호환 (기본값 경고 해결)")
 print(f"📦 총 도구: {len(interior_agent.tools)}개")
+print(f"🔧 단순화 완료: 문서 ID를 정확히 표시하여 복사/붙여넣기 가능")

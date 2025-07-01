@@ -56,16 +56,14 @@ def format_korean_response(result: Dict[str, Any], operation_type: str) -> str:
                 doc_id = doc.get("id", "ID 없음")
                 description = doc.get("data", {}).get("description", "")
                 
-                # 🔍 description이 없다면 다른 필드에서 문서명 찾기
+                # 🔍 description이 없다면 문서 ID를 그대로 사용
                 if not description:
-                    # 견적서 컬렉션: address + versionName 조합
-                    address = doc.get("data", {}).get("address")
-                    version_name = doc.get("data", {}).get("versionName")
+                    # 우선순위 1: 문서 ID 그대로 사용 (정확한 매칭을 위해)
+                    description = doc_id
+                    print(f"🔍 [DEBUG] 문서 ID 그대로 사용: {description}")
                     
-                    if address and version_name:
-                        description = f"{address} ({version_name})"
-                        print(f"🔍 [DEBUG] address+version에서 찾은 문서명: {description}")
-                    else:
+                    # 만약 문서 ID가 의미 없는 값이라면 다른 필드에서 찾기
+                    if not description or description == "ID 없음" or len(description) < 3:
                         # dataJson에서 찾기
                         data_json = doc.get("data", {}).get("dataJson")
                         if data_json:
@@ -119,40 +117,86 @@ def format_korean_response(result: Dict[str, Any], operation_type: str) -> str:
                 return "📄 해당 문서를 찾을 수 없습니다."
             
             doc_id = doc.get("id", "ID 없음")
-            description = doc.get("data", {}).get("description", "설명 없음")
+            description = doc.get("data", {}).get("description", "")
+            
+            # 🔍 description이 없다면 문서 ID를 그대로 사용 (리스트와 동일한 로직)
+            if not description:
+                # 우선순위 1: 문서 ID 그대로 사용 (정확한 매칭을 위해)
+                description = doc_id
+                print(f"🔍 [DEBUG] 상세조회 - 문서 ID 그대로 사용: {description}")
+                
+                # 만약 문서 ID가 의미 없는 값이라면 다른 필드에서 찾기
+                if not description or description == "ID 없음" or len(description) < 3:
+                    # jsonData에서 찾기 (필드명 수정!)
+                    json_data = doc.get("data", {}).get("jsonData")
+                    if json_data:
+                        try:
+                            data = json.loads(json_data)
+                            # 여러 필드를 시도해서 가장 적절한 문서명 찾기
+                            description = (
+                                data.get("description") or 
+                                data.get("address") or
+                                data.get("name") or 
+                                data.get("title") or 
+                                data.get("buildingName") or
+                                "문서"
+                            )
+                            print(f"🔍 [DEBUG] 상세조회 - jsonData에서 찾은 문서명: {description}")
+                        except Exception as e:
+                            print(f"🔍 [DEBUG] 상세조회 - jsonData 파싱 오류: {e}")
+                            description = "문서"
+            
+            if not description:
+                description = "문서"
+                
+            print(f"🔍 [DEBUG] 상세조회 - 최종 문서명: {description}")
             
             formatted = f"🔍 **{description} 상세 정보:**\n\n"
-            formatted += f"📄 **설명:** {description}\n\n"
             
-            # dataJson 상세 파싱
-            data_json = doc.get("data", {}).get("dataJson")
-            if data_json:
+            # 기본 정보 표시
+            data_info = doc.get("data", {})
+            if data_info.get("address"):
+                formatted += f"📍 **주소:** {data_info['address']}\n"
+            if data_info.get("versionName"):
+                formatted += f"📋 **버전:** {data_info['versionName']}\n"
+            if data_info.get("createdAt"):
+                formatted += f"📅 **생성일:** {data_info['createdAt'][:10]}\n"
+            formatted += "\n"
+            
+            # jsonData 상세 파싱 (필드명 수정!)
+            json_data = doc.get("data", {}).get("jsonData")
+            if json_data:
                 try:
-                    data = json.loads(data_json)
-                    formatted += "🏠 **상세 정보:**\n"
+                    data = json.loads(json_data)
                     
-                    if "firstFloorPassword" in data:
-                        formatted += f"   🔑 1층 비밀번호: {data['firstFloorPassword']}\n"
-                    if "unitPassword" in data:
-                        formatted += f"   🏠 호별 비밀번호: {data['unitPassword']}\n"
-                    if "managerName" in data:
-                        formatted += f"   👤 관리소장: {data['managerName']}\n"
-                    if "phoneNumber" in data:
-                        formatted += f"   📞 연락처: {data['phoneNumber']}\n"
-                    if "address" in data:
-                        formatted += f"   📍 주소: {data['address']}\n"
-                    if "buildingType" in data:
-                        formatted += f"   🏢 건물 유형: {data['buildingType']}\n"
-                    if "date" in data and data["date"]:
-                        formatted += f"   📅 등록일: {data['date']}\n"
+                    # 견적서 프로세스 데이터 파싱
+                    if "processData" in data:
+                        formatted += "💼 **견적서 상세 내역:**\n\n"
+                        process_data = data["processData"]
+                        
+                        total_amount = 0
+                        for process in process_data:
+                            if process.get("isActive", True) and process.get("total", 0) > 0:
+                                name = process.get("name", "알 수 없음")
+                                total = process.get("total", 0)
+                                formatted += f"**{name}:** {total:,}원\n"
+                                total_amount += total
+                        
+                        formatted += f"\n💰 **총 견적 금액:** {total_amount:,}원\n\n"
                     
                     # 기타 정보들
-                    for key, value in data.items():
-                        if key not in ["firstFloorPassword", "unitPassword", "managerName", "phoneNumber", "address", "buildingType", "date"] and value:
-                            formatted += f"   📋 {key}: {value}\n"
+                    if "firstFloorPassword" in data:
+                        formatted += f"🔑 **1층 비밀번호:** {data['firstFloorPassword']}\n"
+                    if "unitPassword" in data:
+                        formatted += f"🏠 **호별 비밀번호:** {data['unitPassword']}\n"
+                    if "managerName" in data:
+                        formatted += f"👤 **관리소장:** {data['managerName']}\n"
+                    if "phoneNumber" in data:
+                        formatted += f"📞 **연락처:** {data['phoneNumber']}\n"
                             
                 except Exception as e:
                     formatted += f"   ⚠️ 상세 정보 파싱 중 오류: {str(e)}\n"
+                    print(f"🔍 [DEBUG] jsonData 파싱 오류 상세: {e}")
             
             return formatted
         
