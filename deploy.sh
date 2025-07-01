@@ -12,7 +12,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # 설정값들
-PROJECT_ID=${PROJECT_ID:-"your-gcp-project-id"}
+PROJECT_ID=${PROJECT_ID:-"interior-one-click"}
 SERVICE_NAME="interior-agent-api"
 REGION="asia-northeast3"
 IMAGE_NAME="gcr.io/${PROJECT_ID}/${SERVICE_NAME}"
@@ -43,7 +43,7 @@ gcloud run deploy ${SERVICE_NAME} \
   --platform managed \
   --region ${REGION} \
   --allow-unauthenticated \
-  --port 8080 \
+  --port 8000 \
   --memory 2Gi \
   --cpu 1 \
   --max-instances 10 \

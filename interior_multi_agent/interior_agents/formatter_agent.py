@@ -54,7 +54,6 @@ def format_korean_response(result: Dict[str, Any], operation_type: str) -> str:
                 description = doc.get("data", {}).get("description", "설명 없음")
                 
                 formatted += f"**{i}. {description}**\n"
-                formatted += f"   📝 문서 ID: {doc_id}\n"
                 
                 # dataJson 파싱
                 data_json = doc.get("data", {}).get("dataJson")
@@ -87,7 +86,6 @@ def format_korean_response(result: Dict[str, Any], operation_type: str) -> str:
             description = doc.get("data", {}).get("description", "설명 없음")
             
             formatted = f"🔍 **{description} 상세 정보:**\n\n"
-            formatted += f"📝 **문서 ID:** {doc_id}\n"
             formatted += f"📄 **설명:** {description}\n\n"
             
             # dataJson 상세 파싱
