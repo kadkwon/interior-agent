@@ -50,9 +50,45 @@ def format_korean_response(result: Dict[str, Any], operation_type: str) -> str:
             formatted = f"📄 **문서 목록 ({len(documents)}개):**\n\n"
             print(f"🎨 [FORMAT] 포맷팅 시작 - 문서 {len(documents)}개")
             for i, doc in enumerate(documents, 1):
-                doc_id = doc.get("id", "ID 없음")
-                description = doc.get("data", {}).get("description", "설명 없음")
+                # 🔍 디버깅: 실제 문서 구조 확인
+                print(f"🔍 [DEBUG] 문서 {i} 구조: {doc}")
                 
+                doc_id = doc.get("id", "ID 없음")
+                description = doc.get("data", {}).get("description", "")
+                
+                # 🔍 description이 없다면 다른 필드에서 문서명 찾기
+                if not description:
+                    # 견적서 컬렉션: address + versionName 조합
+                    address = doc.get("data", {}).get("address")
+                    version_name = doc.get("data", {}).get("versionName")
+                    
+                    if address and version_name:
+                        description = f"{address} ({version_name})"
+                        print(f"🔍 [DEBUG] address+version에서 찾은 문서명: {description}")
+                    else:
+                        # dataJson에서 찾기
+                        data_json = doc.get("data", {}).get("dataJson")
+                        if data_json:
+                            try:
+                                data = json.loads(data_json)
+                                # 여러 필드를 시도해서 가장 적절한 문서명 찾기
+                                description = (
+                                    data.get("description") or 
+                                    data.get("address") or
+                                    data.get("name") or 
+                                    data.get("title") or 
+                                    data.get("buildingName") or
+                                    f"문서 #{i}"
+                                )
+                                print(f"🔍 [DEBUG] dataJson에서 찾은 문서명: {description}")
+                            except Exception as e:
+                                print(f"🔍 [DEBUG] dataJson 파싱 오류: {e}")
+                                description = f"문서 #{i}"
+                
+                if not description:
+                    description = f"문서 #{i}"
+                
+                print(f"🔍 [DEBUG] 최종 문서명: {description}")
                 formatted += f"**{i}. {description}**\n"
                 
                 # dataJson 파싱
