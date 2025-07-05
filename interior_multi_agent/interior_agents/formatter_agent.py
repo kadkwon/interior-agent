@@ -34,10 +34,10 @@ def format_korean_response(result: Dict[str, Any], operation_type: str) -> str:
             if not collections:
                 return "📂 사용 가능한 컬렉션이 없습니다."
             
-            formatted = "📂 **사용 가능한 컬렉션 목록:**\n"
+            formatted = "📂 사용 가능한 컬렉션 목록:\n"
             for i, collection in enumerate(collections, 1):
                 collection_id = collection.get("id", collection) if isinstance(collection, dict) else collection
-                formatted += f"   {i}. {collection_id}\n"
+                formatted += f"   {collection_id}\n"
             return formatted
         
         elif operation_type == "list_documents":
@@ -47,156 +47,89 @@ def format_korean_response(result: Dict[str, Any], operation_type: str) -> str:
             if not documents:
                 return "📄 해당 컬렉션에 문서가 없습니다."
             
-            formatted = f"📄 **문서 목록 ({len(documents)}개):**\n\n"
+            formatted = f"📄 문서 목록 ({len(documents)}개):\n\n"
             print(f"🎨 [FORMAT] 포맷팅 시작 - 문서 {len(documents)}개")
+            
             for i, doc in enumerate(documents, 1):
-                # 🔍 디버깅: 실제 문서 구조 확인
-                print(f"🔍 [DEBUG] 문서 {i} 구조: {doc}")
+                print(f"🔍 [DEBUG] 문서 {i} 구조 분석 시작")
                 
-                doc_id = doc.get("id", "ID 없음")
-                description = doc.get("data", {}).get("description", "")
-                
-                # 🔍 description이 없다면 문서 ID를 그대로 사용
-                if not description:
-                    # 우선순위 1: 문서 ID 그대로 사용 (정확한 매칭을 위해)
-                    description = doc_id
-                    print(f"🔍 [DEBUG] 문서 ID 그대로 사용: {description}")
-                    
-                    # 만약 문서 ID가 의미 없는 값이라면 다른 필드에서 찾기
-                    if not description or description == "ID 없음" or len(description) < 3:
-                        # dataJson에서 찾기
-                        data_json = doc.get("data", {}).get("dataJson")
-                        if data_json:
-                            try:
-                                data = json.loads(data_json)
-                                # 여러 필드를 시도해서 가장 적절한 문서명 찾기
-                                description = (
-                                    data.get("description") or 
-                                    data.get("address") or
-                                    data.get("name") or 
-                                    data.get("title") or 
-                                    data.get("buildingName") or
-                                    f"문서 #{i}"
-                                )
-                                print(f"🔍 [DEBUG] dataJson에서 찾은 문서명: {description}")
-                            except Exception as e:
-                                print(f"🔍 [DEBUG] dataJson 파싱 오류: {e}")
-                                description = f"문서 #{i}"
-                
-                if not description:
-                    description = f"문서 #{i}"
-                
-                print(f"🔍 [DEBUG] 최종 문서명: {description}")
-                formatted += f"**{i}. {description}**\n"
-                
-                # dataJson 파싱
-                data_json = doc.get("data", {}).get("dataJson")
-                if data_json:
-                    try:
-                        data = json.loads(data_json)
-                        if "firstFloorPassword" in data:
-                            formatted += f"   🔑 1층 비밀번호: {data['firstFloorPassword']}\n"
-                        if "unitPassword" in data:
-                            formatted += f"   🏠 호별 비밀번호: {data['unitPassword']}\n"
-                        if "managerName" in data:
-                            formatted += f"   👤 관리소장: {data['managerName']}\n"
-                        if "phoneNumber" in data:
-                            formatted += f"   📞 연락처: {data['phoneNumber']}\n"
-                    except:
-                        pass
-                formatted += "\n"
+                doc_id = doc.get("id", f"문서_{i}")
+                formatted += f"{doc_id}\n"
             
             print(f"🎨 [FORMAT] 최종 결과 길이: {len(formatted)}")
-            print(f"🎨 [FORMAT] 최종 결과 미리보기: {formatted[:100]}...")
             return formatted
         
         elif operation_type == "get_document":
-            # actual_data 자체가 문서 데이터임
+            # 🔍 문서 조회: 필드명 한글화해서 상세 표시
             doc = actual_data
             if not doc or "id" not in doc:
                 return "📄 해당 문서를 찾을 수 없습니다."
             
             doc_id = doc.get("id", "ID 없음")
-            description = doc.get("data", {}).get("description", "")
+            formatted = f"🔍 {doc_id} 상세 정보:\n\n"
             
-            # 🔍 description이 없다면 문서 ID를 그대로 사용 (리스트와 동일한 로직)
-            if not description:
-                # 우선순위 1: 문서 ID 그대로 사용 (정확한 매칭을 위해)
-                description = doc_id
-                print(f"🔍 [DEBUG] 상세조회 - 문서 ID 그대로 사용: {description}")
-                
-                # 만약 문서 ID가 의미 없는 값이라면 다른 필드에서 찾기
-                if not description or description == "ID 없음" or len(description) < 3:
-                    # jsonData에서 찾기 (필드명 수정!)
-                    json_data = doc.get("data", {}).get("jsonData")
-                    if json_data:
-                        try:
-                            data = json.loads(json_data)
-                            # 여러 필드를 시도해서 가장 적절한 문서명 찾기
-                            description = (
-                                data.get("description") or 
-                                data.get("address") or
-                                data.get("name") or 
-                                data.get("title") or 
-                                data.get("buildingName") or
-                                "문서"
-                            )
-                            print(f"🔍 [DEBUG] 상세조회 - jsonData에서 찾은 문서명: {description}")
-                        except Exception as e:
-                            print(f"🔍 [DEBUG] 상세조회 - jsonData 파싱 오류: {e}")
-                            description = "문서"
+            # 필드명 한글화 매핑
+            field_mapping = {
+                'createdAt': '생성일',
+                'updatedAt': '수정일',
+                'address': '주소',
+                'buildingName': '건물명',
+                'description': '설명',
+                'name': '이름',
+                'title': '제목',
+                'phoneNumber': '전화번호',
+                'phone': '전화번호',
+                'email': '이메일',
+                'managerName': '담당자',
+                'versionName': '버전명',
+                'totalAmount': '총액',
+                'unitPassword': '세대비밀번호',
+                'firstFloorPassword': '1층비밀번호',
+                'memo': '메모',
+                'note': '노트',
+                'status': '상태',
+                'type': '유형',
+                'category': '분류',
+                'id': 'ID',
+                'data': '데이터'
+            }
             
-            if not description:
-                description = "문서"
-                
-            print(f"🔍 [DEBUG] 상세조회 - 최종 문서명: {description}")
-            
-            formatted = f"🔍 **{description} 상세 정보:**\n\n"
-            
-            # 기본 정보 표시
+            # 기본 정보 표시 (한글화)
             data_info = doc.get("data", {})
-            if data_info.get("address"):
-                formatted += f"📍 **주소:** {data_info['address']}\n"
-            if data_info.get("versionName"):
-                formatted += f"📋 **버전:** {data_info['versionName']}\n"
-            if data_info.get("createdAt"):
-                formatted += f"📅 **생성일:** {data_info['createdAt'][:10]}\n"
-            formatted += "\n"
             
-            # jsonData 상세 파싱 (필드명 수정!)
-            json_data = doc.get("data", {}).get("jsonData")
-            if json_data:
-                try:
-                    data = json.loads(json_data)
+            # 중요한 필드들 우선 표시
+            priority_fields = ['address', 'buildingName', 'description', 'name', 'title', 
+                             'managerName', 'phoneNumber', 'phone', 'email', 'versionName', 
+                             'createdAt', 'updatedAt', 'status', 'type', 'category']
+            
+            for field in priority_fields:
+                if field in data_info and data_info[field]:
+                    korean_name = field_mapping.get(field, field)
+                    value = data_info[field]
                     
-                    # 견적서 프로세스 데이터 파싱
-                    if "processData" in data:
-                        formatted += "💼 **견적서 상세 내역:**\n\n"
-                        process_data = data["processData"]
-                        
-                        total_amount = 0
-                        for process in process_data:
-                            if process.get("isActive", True) and process.get("total", 0) > 0:
-                                name = process.get("name", "알 수 없음")
-                                total = process.get("total", 0)
-                                formatted += f"**{name}:** {total:,}원\n"
-                                total_amount += total
-                        
-                        formatted += f"\n💰 **총 견적 금액:** {total_amount:,}원\n\n"
+                    # 날짜 형식 정리
+                    if field in ['createdAt', 'updatedAt'] and isinstance(value, str):
+                        if 'T' in value:
+                            value = value.split('T')[0]
                     
-                    # 기타 정보들
-                    if "firstFloorPassword" in data:
-                        formatted += f"🔑 **1층 비밀번호:** {data['firstFloorPassword']}\n"
-                    if "unitPassword" in data:
-                        formatted += f"🏠 **호별 비밀번호:** {data['unitPassword']}\n"
-                    if "managerName" in data:
-                        formatted += f"👤 **관리소장:** {data['managerName']}\n"
-                    if "phoneNumber" in data:
-                        formatted += f"📞 **연락처:** {data['phoneNumber']}\n"
-                            
-                except Exception as e:
-                    formatted += f"   ⚠️ 상세 정보 파싱 중 오류: {str(e)}\n"
-                    print(f"🔍 [DEBUG] jsonData 파싱 오류 상세: {e}")
+                    formatted += f"{korean_name}: {value}\n"
+            
+            # JSON 필드 자동 탐지 및 파싱
+            for field_name, field_value in data_info.items():
+                if field_name in priority_fields:
+                    continue
+                    
+                if isinstance(field_value, str) and field_value.strip():
+                    trimmed_value = field_value.strip()
+                    if (trimmed_value.startswith('{') and trimmed_value.endswith('}')) or \
+                       (trimmed_value.startswith('[') and trimmed_value.endswith(']')):
+                        try:
+                            json_data = json.loads(trimmed_value)
+                            korean_field = field_mapping.get(field_name, field_name)
+                            formatted += f"\n📋 {korean_field} 내용:\n"
+                            formatted += _format_json_data(json_data, field_mapping)
+                        except:
+                            pass
             
             return formatted
         
@@ -214,6 +147,33 @@ def format_korean_response(result: Dict[str, Any], operation_type: str) -> str:
     except Exception as e:
         print(f"🎨 [FORMAT] 오류 발생: {str(e)}")
         return f"❌ 응답 처리 중 오류 발생: {str(e)}"
+
+def _format_json_data(data, field_mapping):
+    """JSON 데이터를 한글화해서 포맷팅"""
+    formatted = ""
+    
+    if isinstance(data, list):
+        for i, item in enumerate(data, 1):
+            if isinstance(item, dict):
+                formatted += f"\n{i}번째 항목:\n"
+                for key, value in item.items():
+                    if value:
+                        korean_key = field_mapping.get(key, key)
+                        formatted += f"  {korean_key}: {value}\n"
+            else:
+                formatted += f"  {item}\n"
+    
+    elif isinstance(data, dict):
+        for key, value in data.items():
+            if value:
+                korean_key = field_mapping.get(key, key)
+                if isinstance(value, (dict, list)):
+                    formatted += f"\n{korean_key}:\n"
+                    formatted += _format_json_data(value, field_mapping)
+                else:
+                    formatted += f"  {korean_key}: {value}\n"
+    
+    return formatted
 
 async def format_response(result: Dict[str, Any], operation_type: str) -> str:
     """포맷팅 전용 함수 - 에이전트 도구로 사용"""
