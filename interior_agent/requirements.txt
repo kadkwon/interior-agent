@@ -1,0 +1,18 @@
+# 인테리어 멀티 에이전트 시스템 - ADK MCP 직접 사용 방식
+# 최소한의 의존성만 포함
+
+# ADK 기본 요구사항
+google-adk
+
+# MCP 클라이언트 의존성
+aiohttp>=3.8.0
+deprecated>=1.2.0
+
+# 비동기 처리
+asyncio-mqtt>=0.13.0
+
+# 로깅
+structlog>=23.2.0
+
+# 기본 Python 패키지 (대부분 표준 라이브러리)
+# json, typing 등은 Python 내장 모듈이므로 별도 설치 불필요 
