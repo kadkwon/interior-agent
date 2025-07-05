@@ -7,6 +7,9 @@
 - 라우팅 역할에 충실한 설계
 """
 
+# ========================================
+# 📦 의존성 및 라이브러리 Import
+# ========================================
 import json
 from typing import Optional, Dict, Any, List
 from google.adk.agents import LlmAgent
@@ -15,7 +18,10 @@ from .mcp_client import firebase_client, email_client
 from .formatter_agent import format_korean_response
 from .email_agent import send_estimate_email, test_email_connection, get_email_server_info
 
-# 🔄 현재 세션 추적 (글로벌)
+# ========================================
+# 🔄 세션 관리 (글로벌 상태)
+# ========================================
+# 현재 ADK 세션 ID를 추적하여 MCP 서버와의 일관성 유지
 current_session_id = None
 
 def set_current_session(session_id: str):
@@ -24,13 +30,17 @@ def set_current_session(session_id: str):
     current_session_id = session_id
     print(f"🔄 현재 세션 설정: {session_id}")
 
-# 컬렉션 목록 조회 도구
+# ========================================
+# 🔥 Firebase 관련 도구 함수들 (직접 처리)
+# ========================================
+# 메인 에이전트가 Firebase 관련 요청을 직접 처리
+# 모든 결과는 formatter_agent를 통해 한글로 포맷팅됨
+
 async def firestore_list_collections():
     """Firestore 루트 컬렉션 목록 조회"""
     result = await firebase_client.call_tool("firestore_list_collections", {}, current_session_id)
     return format_korean_response(result, "list_collections")
 
-# Firestore 도구들 (6개)
 async def firestore_list(collection: str, limit: Optional[int] = None):
     """컬렉션 문서 목록 조회 - 한글 가독성 버전"""
     params = {"collection": collection}
@@ -79,8 +89,11 @@ async def firestore_delete(collection: str, document_id: str):
     }, current_session_id)
     return format_korean_response(result, "delete_document")
 
-# ✅ 하위 에이전트 패턴 - 이메일 관련 요청은 email_agent에 위임
-# 세션 관리를 위한 래퍼 함수들
+# ========================================
+# 📧 하위 에이전트 패턴 - 이메일 관련 래퍼 함수들
+# ========================================
+# 메인 에이전트는 라우팅만 담당하고 실제 처리는 email_agent에 위임
+# 세션 관리를 위한 래퍼 함수들로 구현
 
 async def send_estimate_email_wrapper(email: str, address: str, process_data: Optional[str] = None):
     """견적서 이메일 전송 - 하위 에이전트 위임"""
@@ -97,10 +110,17 @@ async def get_email_server_info_wrapper():
     print(f"🔄 [ROUTING] 이메일 서버 정보 조회 요청을 email_agent에 위임")
     return await get_email_server_info(current_session_id)
 
-# AI 스마트 통합 에이전트 - Firebase + Email (라우팅 전담)
+# ========================================
+# 🤖 메인 LlmAgent 정의 (라우팅 전담)
+# ========================================
+# Firebase 직접 처리 + Email 하위 에이전트 위임 구조
 interior_agent = LlmAgent(
     model='gemini-2.5-flash-lite-preview-06-17',
     name='interior_unified_agent',
+    
+    # ========================================
+    # 📋 에이전트 Instructions (상세 동작 규칙)
+    # ========================================
     instruction='''
 🏠 인테리어 전문가입니다! Firebase 데이터 조회와 이메일 전송을 처리합니다.
 
@@ -271,21 +291,29 @@ interior_agent = LlmAgent(
 
 **핵심: 검색 실패 = 즉시 자동 재검색 (사용자에게 묻지 않음)! + 수정 요청 = 기존 구조 완전 보존 + JSON 파싱→부분수정→재변환 + 반드시 firestore_update 실행! + 실제 데이터만 출력! + 새 구조 생성 절대 금지!**
     ''',
+    
+    # ========================================
+    # 🔧 도구 등록 (Tools Registration)
+    # ========================================
     tools=[
-        # Firebase 도구들 (6개)
-        FunctionTool(firestore_list_collections),
-        FunctionTool(firestore_list),
-        FunctionTool(firestore_get),
-        FunctionTool(firestore_add),
-        FunctionTool(firestore_update),
-        FunctionTool(firestore_delete),
+        # Firebase 도구들 (6개) - 메인 에이전트가 직접 처리
+        FunctionTool(firestore_list_collections),  # 컬렉션 목록 조회
+        FunctionTool(firestore_list),              # 문서 목록 조회
+        FunctionTool(firestore_get),               # 문서 상세 조회
+        FunctionTool(firestore_add),               # 문서 추가
+        FunctionTool(firestore_update),            # 문서 수정
+        FunctionTool(firestore_delete),            # 문서 삭제
+        
         # Email 도구들 (3개) - 하위 에이전트 위임
-        FunctionTool(send_estimate_email_wrapper),
-        FunctionTool(test_email_connection_wrapper),
-        FunctionTool(get_email_server_info_wrapper)
+        FunctionTool(send_estimate_email_wrapper),    # 견적서 이메일 전송
+        FunctionTool(test_email_connection_wrapper),  # 이메일 서버 연결 테스트
+        FunctionTool(get_email_server_info_wrapper)   # 이메일 서버 정보 조회
     ]
 )
 
+# ========================================
+# 🚀 초기화 로그 및 시스템 정보
+# ========================================
 print(f"✅ 통합 에이전트 초기화 완료 (Firebase + Email) - 라우팅 전담")
 print(f"🔍 Firebase 데이터 조회 기능 (6개 도구) - 직접 처리")
 print(f"✏️ Firebase 데이터 수정 기능 (JSON 구조 완전 보존 + 부분 수정만)")
