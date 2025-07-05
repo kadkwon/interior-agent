@@ -1,5 +1,10 @@
 """
 🏠 인테리어 통합 에이전트 - Firebase + Email 통합 버전 (라우팅 전담)
+
+🎯 하위 에이전트 패턴 구현:
+- Firebase 관련 요청: 직접 처리
+- Email 관련 요청: email_agent에 위임
+- 라우팅 역할에 충실한 설계
 """
 
 import json
@@ -8,6 +13,7 @@ from google.adk.agents import LlmAgent
 from google.adk.tools import FunctionTool
 from .mcp_client import firebase_client, email_client
 from .formatter_agent import format_korean_response
+from .email_agent import send_estimate_email, test_email_connection, get_email_server_info
 
 # 🔄 현재 세션 추적 (글로벌)
 current_session_id = None
@@ -73,70 +79,23 @@ async def firestore_delete(collection: str, document_id: str):
     }, current_session_id)
     return format_korean_response(result, "delete_document")
 
-# Email 하위 에이전트 함수들 - Google AI 완전 호환 버전
-async def send_estimate_email(email: str, address: str, process_data: Optional[str] = None):
-    """견적서 이메일 전송 - Google AI 호환성을 위해 기본값 None 사용"""
-    # None이거나 빈 문자열이면 빈 배열 문자열로 설정
-    if process_data is None or not process_data or process_data.strip() == "":
-        process_data = "[]"
-    
-    # estimate-email-mcp 서버는 process_data를 배열로 받아야 함
-    try:
-        import json
-        
-        # 문자열을 배열로 변환하는 로직
-        if isinstance(process_data, str):
-            process_data = process_data.strip()
-            if process_data == "" or process_data == "[]":
-                # 빈 문자열이거나 빈 배열 문자열이면 빈 배열
-                data_to_send = []
-            else:
-                try:
-                    # JSON 문자열 파싱 시도
-                    parsed_data = json.loads(process_data)
-                    # 이미 배열이면 그대로, 아니면 배열로 감싸기
-                    data_to_send = parsed_data if isinstance(parsed_data, list) else [parsed_data]
-                except json.JSONDecodeError:
-                    # JSON 파싱 실패시 빈 배열 (주소 정보만 전송)
-                    data_to_send = []
-        else:
-            # 문자열이 아니면 배열로 변환
-            data_to_send = [process_data] if not isinstance(process_data, list) else process_data
-            
-    except Exception as e:
-        # 모든 오류 시 빈 배열
-        print(f"⚠️ process_data 변환 오류: {e}")
-        data_to_send = []
-    
-    print(f"📧 이메일 전송 데이터: email={email}, address={address}, process_data={data_to_send}")
-    
-    result = await email_client.call_tool("send_estimate_email", {
-        "email": email,
-        "address": address,
-        "process_data": data_to_send
-    }, current_session_id)
-    
-    if "error" in result:
-        return f"❌ 이메일 전송 실패: {result['error']}"
-    return "✅ 견적서 이메일이 성공적으로 전송되었습니다."
+# ✅ 하위 에이전트 패턴 - 이메일 관련 요청은 email_agent에 위임
+# 세션 관리를 위한 래퍼 함수들
 
-async def test_email_connection():
-    """이메일 서버 연결 테스트"""
-    result = await email_client.call_tool("test_connection", {
-        "random_string": "test"
-    }, current_session_id)
-    if "error" in result:
-        return f"❌ 이메일 서버 연결 실패: {result['error']}"
-    return "✅ 이메일 서버 연결 성공"
+async def send_estimate_email_wrapper(email: str, address: str, process_data: Optional[str] = None):
+    """견적서 이메일 전송 - 하위 에이전트 위임"""
+    print(f"🔄 [ROUTING] 이메일 전송 요청을 email_agent에 위임")
+    return await send_estimate_email(email, address, process_data, current_session_id)
 
-async def get_email_server_info():
-    """이메일 서버 정보 조회"""
-    result = await email_client.call_tool("get_server_info", {
-        "random_string": "info"
-    }, current_session_id)
-    if "error" in result:
-        return f"❌ 서버 정보 조회 실패: {result['error']}"
-    return f"📧 이메일 서버 정보: {result}"
+async def test_email_connection_wrapper():
+    """이메일 서버 연결 테스트 - 하위 에이전트 위임"""
+    print(f"🔄 [ROUTING] 이메일 연결 테스트 요청을 email_agent에 위임")
+    return await test_email_connection(current_session_id)
+
+async def get_email_server_info_wrapper():
+    """이메일 서버 정보 조회 - 하위 에이전트 위임"""
+    print(f"🔄 [ROUTING] 이메일 서버 정보 조회 요청을 email_agent에 위임")
+    return await get_email_server_info(current_session_id)
 
 # AI 스마트 통합 에이전트 - Firebase + Email (라우팅 전담)
 interior_agent = LlmAgent(
@@ -320,22 +279,22 @@ interior_agent = LlmAgent(
         FunctionTool(firestore_add),
         FunctionTool(firestore_update),
         FunctionTool(firestore_delete),
-        # Email 도구들 (3개)
-        FunctionTool(send_estimate_email),
-        FunctionTool(test_email_connection),
-        FunctionTool(get_email_server_info)
+        # Email 도구들 (3개) - 하위 에이전트 위임
+        FunctionTool(send_estimate_email_wrapper),
+        FunctionTool(test_email_connection_wrapper),
+        FunctionTool(get_email_server_info_wrapper)
     ]
 )
 
 print(f"✅ 통합 에이전트 초기화 완료 (Firebase + Email) - 라우팅 전담")
-print(f"🔍 Firebase 데이터 조회 기능 (6개 도구)")
+print(f"🔍 Firebase 데이터 조회 기능 (6개 도구) - 직접 처리")
 print(f"✏️ Firebase 데이터 수정 기능 (JSON 구조 완전 보존 + 부분 수정만)")
 print(f"🤖 완전 자동 처리: 검색 실패 시 사용자에게 묻지 않고 즉시 재검색")
 print(f"🚨 구조 보존 강제: JSON 파싱→부분수정→재변환 (새 구조 생성 절대 금지)")
 print(f"🚨 시뮬레이션 금지: 메시지만 출력하고 실제 업데이트 안 하는 것 절대 금지")
-print(f"📧 Email 전송 기능 (3개 도구)")
+print(f"📧 Email 전송 기능 (3개 도구) - email_agent에 위임")
 print(f"🎨 포맷팅 기능은 formatter_agent로 분리")
-print(f"🎯 통합 명령 처리: 'XX 주소를 YY@email.com으로 보내줘' 가능")
+print(f"🎯 하위 에이전트 패턴: 메인 에이전트(라우팅) → 전문 하위 에이전트(실제 처리)")
 print(f"🧠 맥락 유지 강화: 이메일 주소만 입력해도 직전 주소와 자동 연결")
 print(f"⚡ Google AI 완전 호환 (기본값 경고 해결)")
 print(f"📦 총 도구: {len(interior_agent.tools)}개")
