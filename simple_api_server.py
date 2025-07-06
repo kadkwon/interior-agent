@@ -220,7 +220,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
                             if hasattr(part, 'text') and part.text:
                                 final_response = part.text
                                 print(f"💬 응답 내용: {part.text[:100]}...")
-            
+        
             response_text = final_response if final_response else "에이전트가 응답을 생성하지 못했습니다."
             print(f"💬 ADK 응답 생성 완료: {len(response_text)} 문자")
             
