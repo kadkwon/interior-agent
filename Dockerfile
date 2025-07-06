@@ -11,14 +11,14 @@ RUN apt-get update && apt-get install -y \
 
 # Python 의존성 파일들 복사 (캐시 최적화)
 COPY requirements_fastapi.txt ./
-COPY interior_multi_agent/requirements.txt ./interior_requirements.txt
+COPY interior_agent/requirements.txt ./interior_requirements.txt
 
 # Python 의존성 설치
 RUN pip install --no-cache-dir -r requirements_fastapi.txt
 RUN pip install --no-cache-dir -r interior_requirements.txt
 
 # 애플리케이션 코드 복사
-COPY interior_multi_agent/ ./interior_multi_agent/
+COPY interior_agent/ ./interior_agent/
 COPY simple_api_server.py ./
 COPY firebase.json ./
 
