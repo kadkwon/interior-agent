@@ -1,11 +1,12 @@
 """
 🚀 초간단 FastAPI 브릿지 서버 - ADK 표준 구조 연결 버전
+🎯 세션 ID 기반 라우팅으로 다중 에이전트 지원
 """
 
 import os
 import asyncio
 import time
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, Dict
@@ -26,10 +27,20 @@ print("🔍 ADK 표준 구조 로드 진단 시작...")
 try:
     print("1️⃣ 새로운 ADK 표준 인테리어 에이전트 로드 중...")
     from interior_agent import root_agent, runner, session_service, print_adk_info
+    
+    # 🔧 AS 전용 루트 에이전트 import 추가
+    from interior_agent.as_root_agent import as_root_agent, as_runner, as_session_service
+    
     print("✅ ADK 표준 인테리어 에이전트 로드 성공")
     print(f"📦 메인 에이전트: {root_agent.name}")
     print(f"🔀 하위 에이전트: {len(root_agent.sub_agents)}개")
     for i, sub_agent in enumerate(root_agent.sub_agents):
+        print(f"   {i+1}. {sub_agent.name}")
+    
+    # 🎯 AS 전용 루트 에이전트 로드 확인
+    print(f"🔧 AS 전용 루트 에이전트 로드: {as_root_agent.name}")
+    print(f"🔧 AS 전용 하위 에이전트: {len(as_root_agent.sub_agents)}개")
+    for i, sub_agent in enumerate(as_root_agent.sub_agents):
         print(f"   {i+1}. {sub_agent.name}")
     
     # ADK 정보 출력
@@ -62,6 +73,9 @@ except ImportError as e:
             session_service=session_service
         )
         root_agent = interior_agent  # 호환성을 위해
+        as_root_agent = interior_agent  # 폴백 모드에서는 같은 에이전트 사용
+        as_runner = runner  # 폴백 모드에서는 같은 runner 사용
+        as_session_service = session_service  # 폴백 모드에서는 같은 세션 서비스 사용
         
         ADK_AVAILABLE = True
         print("🔄 폴백 모드로 활성화됨")
@@ -85,8 +99,40 @@ if import_errors and not ADK_AVAILABLE:
 else:
     print(f"\n🚀 ADK 활성화됨! (표준 구조: {len(import_errors) == 0})")
 
+# ========================================
+# 🎯 세션 ID 기반 라우팅 로직
+# ========================================
+def get_agent_by_session_id(session_id: str):
+    """
+    세션 ID 패턴에 따라 사용할 에이전트를 결정합니다.
+    
+    Args:
+        session_id (str): 클라이언트에서 전송된 세션 ID
+        
+    Returns:
+        tuple: (에이전트 객체, 에이전트 타입 문자열, runner 객체)
+        
+    패턴:
+        - customer-service-*: AS 전용 루트 에이전트 (소비자 상담)
+        - react-session-*: 전체 루트 에이전트 (인테리어 디자인)
+        - 기타: 기본값으로 전체 루트 에이전트
+    """
+    if not session_id:
+        return root_agent, "all_agents", runner
+    
+    if session_id.startswith("customer-service-"):
+        print(f"🔧 AS 전용 루트 에이전트 선택: {session_id}")
+        return as_root_agent, "as_root_agent", as_runner
+    elif session_id.startswith("react-session-"):
+        print(f"🏠 전체 루트 에이전트 선택: {session_id}")
+        return root_agent, "all_agents", runner
+    else:
+        # 기본값: 전체 루트 에이전트 사용
+        print(f"🔄 기본 루트 에이전트 선택: {session_id}")
+        return root_agent, "all_agents", runner
+
 # FastAPI 앱
-app = FastAPI(title="인테리어 에이전트 API - ADK 표준", version="4.0.0")
+app = FastAPI(title="인테리어 에이전트 API - 세션 라우팅 지원", version="5.0.0")
 
 # CORS 설정
 app.add_middleware(
@@ -95,6 +141,72 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ========================================
+# 🎯 세션 ID 기반 라우팅 미들웨어
+# ========================================
+@app.middleware("http")
+async def session_routing_middleware(request: Request, call_next):
+    """
+    모든 HTTP 요청을 가로채서 세션 ID를 확인하고,
+    적절한 에이전트 정보를 request.state에 저장합니다.
+    
+    이 미들웨어가 필요한 이유:
+    1. 같은 서버에서 다른 챗봇들이 서로 다른 에이전트를 사용해야 함
+    2. 코드 중복 없이 중앙 집중식 라우팅 관리
+    3. 성능 최적화 (요청마다 에이전트 선택 로직 실행 방지)
+    """
+    # 요청 정보 로깅
+    print(f"🌐 요청 수신: {request.method} {request.url.path}")
+    
+    # POST 요청의 경우 body에서 session_id 추출 시도
+    if request.method == "POST" and request.url.path == "/chat":
+        try:
+            # body를 읽어서 session_id 확인 (한 번만 읽을 수 있으므로 주의)
+            body = await request.body()
+            if body:
+                import json
+                try:
+                    body_data = json.loads(body.decode())
+                    session_id = body_data.get("session_id", "")
+                    print(f"📝 POST body에서 세션 ID 추출: {session_id}")
+                    
+                    # 에이전트 선택 및 request.state에 저장
+                    selected_agent, agent_type, selected_runner = get_agent_by_session_id(session_id)
+                    request.state.selected_agent = selected_agent
+                    request.state.agent_type = agent_type
+                    request.state.selected_runner = selected_runner
+                    request.state.session_id = session_id
+                    
+                    print(f"✅ 에이전트 선택 완료: {agent_type}")
+                    
+                except json.JSONDecodeError:
+                    print("⚠️ JSON 파싱 실패, 기본 에이전트 사용")
+                    request.state.selected_agent = root_agent
+                    request.state.agent_type = "all_agents"
+                    request.state.selected_runner = runner
+                    request.state.session_id = "default"
+        except Exception as e:
+            print(f"❌ 세션 ID 추출 실패: {e}")
+            request.state.selected_agent = root_agent
+            request.state.agent_type = "all_agents"
+            request.state.selected_runner = runner
+            request.state.session_id = "default"
+    else:
+        # GET 요청이나 다른 경로의 경우 기본 에이전트 사용
+        request.state.selected_agent = root_agent
+        request.state.agent_type = "all_agents"
+        request.state.selected_runner = runner
+        request.state.session_id = "default"
+    
+    # 다음 처리 과정으로 진행
+    response = await call_next(request)
+    
+    # 응답 헤더에 사용된 에이전트 정보 추가 (디버깅용)
+    response.headers["X-Agent-Type"] = getattr(request.state, 'agent_type', 'unknown')
+    response.headers["X-Session-ID"] = getattr(request.state, 'session_id', 'unknown')
+    
+    return response
 
 # 세션 관리 - 애플리케이션 레벨 대화 히스토리 저장
 conversation_storage: Dict[str, list] = {}
@@ -115,7 +227,12 @@ async def health():
         "status": "healthy", 
         "adk_available": ADK_AVAILABLE,
         "active_sessions": len(conversation_storage),
-        "agent_structure": "ADK_Standard" if ADK_AVAILABLE else "Unavailable"
+        "agent_structure": "ADK_Standard_with_SessionRouting" if ADK_AVAILABLE else "Unavailable",
+        "supported_session_patterns": [
+            "customer-service-*: AS 전용 에이전트",
+            "react-session-*: 전체 에이전트",
+            "기타: 기본 전체 에이전트"
+        ]
     }
 
 @app.get("/status")
@@ -126,16 +243,26 @@ async def status():
         "status": "healthy",
         "adk_available": ADK_AVAILABLE,
         "active_sessions": len(conversation_storage),
-        "session_management": "enabled",
+        "session_management": "enabled_with_routing",
         "agent_info": {
             "main_agent": root_agent.name if ADK_AVAILABLE else None,
-            "sub_agents": len(root_agent.sub_agents) if ADK_AVAILABLE else 0
+            "sub_agents": len(root_agent.sub_agents) if ADK_AVAILABLE else 0,
+            "as_root_agent": as_root_agent.name if ADK_AVAILABLE else None,
+            "as_sub_agents": len(as_root_agent.sub_agents) if ADK_AVAILABLE else 0
         }
     }
 
 @app.post("/chat")
-async def chat(request: ChatRequest) -> ChatResponse:
-    """채팅 API - ADK 표준 구조 사용"""
+async def chat(request: ChatRequest, req: Request) -> ChatResponse:
+    """
+    채팅 API - 세션 ID 기반 에이전트 라우팅 지원
+    
+    이 엔드포인트가 하는 일:
+    1. 미들웨어에서 설정된 에이전트 정보 사용
+    2. 세션별 대화 히스토리 관리  
+    3. 선택된 에이전트로 요청 처리
+    4. 일관된 응답 형식 제공
+    """
     
     if not ADK_AVAILABLE:
         return ChatResponse(
@@ -145,8 +272,14 @@ async def chat(request: ChatRequest) -> ChatResponse:
     try:
         print(f"🔄 사용자 요청: {request.message}")
         
-        # 🎯 ADK 표준 세션 관리
-        session_id = request.session_id
+        # 🎯 미들웨어에서 설정된 에이전트 정보 사용
+        selected_agent = getattr(req.state, 'selected_agent', root_agent)
+        agent_type = getattr(req.state, 'agent_type', 'all_agents')
+        selected_runner = getattr(req.state, 'selected_runner', runner)
+        session_id = getattr(req.state, 'session_id', request.session_id)
+        
+        print(f"🤖 선택된 에이전트: {agent_type}")
+        print(f"🏃 선택된 Runner: {selected_runner.app_name}")
         print(f"🔄 세션 ID 사용: {session_id}")
         
         # 애플리케이션 레벨 세션 초기화 (필요시)
@@ -164,35 +297,39 @@ async def chat(request: ChatRequest) -> ChatResponse:
         print(f"📝 컨텍스트 메시지 길이: {len(context_message)} 문자")
         
         # ========================================
-        # 🎯 ADK 표준 Runner 사용 (올바른 세션 관리)
+        # 🎯 선택된 에이전트로 요청 처리
         # ========================================
-        print(f"🚀 ADK 표준 Runner로 요청 처리 중...")
+        print(f"🚀 {agent_type} 에이전트로 요청 처리 중...")
+        
+        # 🎯 선택된 세션 서비스 사용
+        selected_session_service = selected_runner.session_service
+        app_name = selected_runner.app_name
         
         # ADK 표준 세션 생성 또는 재사용
         adk_session = None
         try:
             # 기존 세션 확인 또는 새로 생성
             try:
-                adk_session = await session_service.get_session(
-                    app_name="interior_agent",
+                adk_session = await selected_session_service.get_session(
+                    app_name=app_name,
                     user_id=session_id,
                     session_id=session_id
                 )
-                print(f"✅ 기존 ADK 세션 재사용: {adk_session.id}")
+                print(f"✅ 기존 ADK 세션 재사용: {adk_session.id} (앱: {app_name})")
             except:
                 # 세션이 없으면 새로 생성
-                adk_session = await session_service.create_session(
-                    app_name="interior_agent",
+                adk_session = await selected_session_service.create_session(
+                    app_name=app_name,
                     user_id=session_id,
                     session_id=session_id
                 )
-                print(f"✅ 새 ADK 세션 생성: {adk_session.id}")
+                print(f"✅ 새 ADK 세션 생성: {adk_session.id} (앱: {app_name})")
                 
         except Exception as e:
             print(f"❌ ADK 세션 생성/조회 실패: {e}")
             return ChatResponse(response="세션 생성에 실패했습니다. 다시 시도해주세요.")
         
-        # Runner를 통한 실행
+        # Runner를 통한 실행 (선택된 에이전트 사용)
         response_text = ""
         try:
             print(f"🔄 ADK 세션 사용: user_id={session_id}, session_id={adk_session.id}")
@@ -204,9 +341,12 @@ async def chat(request: ChatRequest) -> ChatResponse:
                 parts=[types.Part(text=context_message)]
             )
             
+            # 🎯 선택된 Runner로 직접 실행
+            print(f"🏃 선택된 Runner 사용: {selected_runner.app_name}")
+            
             # Runner 실행 (생성된 세션 사용)
             final_response = None
-            async for event in runner.run_async(
+            async for event in selected_runner.run_async(
                 user_id=session_id,
                 session_id=adk_session.id,  # 생성된 세션 ID 사용
                 new_message=content
@@ -222,10 +362,10 @@ async def chat(request: ChatRequest) -> ChatResponse:
                                 print(f"💬 응답 내용: {part.text[:100]}...")
         
             response_text = final_response if final_response else "에이전트가 응답을 생성하지 못했습니다."
-            print(f"💬 ADK 응답 생성 완료: {len(response_text)} 문자")
+            print(f"💬 {agent_type} 응답 생성 완료: {len(response_text)} 문자")
             
         except Exception as e:
-            print(f"❌ ADK Runner 실행 오류: {e}")
+            print(f"❌ {agent_type} 에이전트 실행 오류: {e}")
             import traceback
             traceback.print_exc()
             response_text = f"죄송합니다. 요청 처리 중 오류가 발생했습니다: {str(e)}"
@@ -247,7 +387,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
         
         raise HTTPException(
             status_code=500, 
-            detail=f"ADK 표준 구조 처리 오류: {str(e)}"
+            detail=f"세션 라우팅 기반 처리 오류: {str(e)}"
         )
 
 # 세션 관리 API

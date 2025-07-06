@@ -133,7 +133,7 @@ curl http://localhost:8080/
 Cursor에서:
 
 ```
-"gncloud86@naver.com에 월배아이파크 1차 109동 2401호_2차 견적서를 보내줘"
+"gncloud86@naver.com에 월배아이파크 1차 100동 2000호_2차 견적서를 보내줘"
 ```
 
 1. Firebase MCP가 견적서 데이터 조회
