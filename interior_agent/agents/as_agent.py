@@ -36,11 +36,26 @@ async def save_as_request(address: str, phone: str, problem: str, session_id: Op
         now = datetime.now()
         doc_name = f"as_{now.strftime('%Y%m%d_%H%M%S_%f')[:17]}"  # as_20250106_022015_001
         
+        # MMS 템플릿
+        mms_template = f"""🔧 A/S 접수 알림
+
+안녕하세요, 이사님.
+고객님 A/S 건이 발생 되었습니다.
+
+📍 주소: {address}
+📞 전화번호: {phone}
+❗ 문제 내용: {problem}
+
+관련 업체에 연락 한번번 부탁드려도 될까요?
+
+항상 감사드리고, 사랑합니다."""
+        
         # 저장할 데이터 (1행 JSON 문자열 형태)
         as_data = {
             "address": address,
             "phone": phone,
             "problem": problem,
+            "mmsTemplate": mms_template,
             "createdAt": now.isoformat()
         }
         
@@ -216,6 +231,22 @@ AS 신청하실 현장 주소를 말씀해주세요.
    - address: 사용자가 입력한 주소
    - phone: 사용자가 입력한 전화번호
    - problem: 사용자가 설명한 문제
+   
+   **추가로 MMS 템플릿도 함께 저장:**
+   ```
+   🔧 A/S 접수 알림
+
+   안녕하세요, 이사님.
+   고객님 A/S 건이 추가되었습니다.
+
+   📍 주소: [입력받은 주소]
+   📞 전화번호: [입력받은 전화번호]
+   ❗ 문제 내용: [고객이 설명한 내용]
+
+   관련 업체에 연락해주시고 A/S 진행 요청 부탁드리겠습니다.
+
+   항상 감사드리고, 사랑합니다.
+   ```
 
 2. **저장 완료 후 안내 메시지:**
 ```

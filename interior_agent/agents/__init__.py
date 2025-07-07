@@ -13,6 +13,6 @@ from .as_agent import as_agent
 
 __all__ = [
     'firebase_agent',
-    'email_agent', 
+    'email_agent',
     'as_agent'
 ] 
