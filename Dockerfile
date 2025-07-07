@@ -3,11 +3,23 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# 🔧 UTF-8 로케일 설정 추가 (한글 깨짐 방지)
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+ENV PYTHONIOENCODING=utf-8
+ENV PYTHONUTF8=1
+
 # 시스템 의존성 설치
 RUN apt-get update && apt-get install -y \
     curl \
     git \
+    locales \
     && rm -rf /var/lib/apt/lists/*
+
+# UTF-8 로케일 생성 및 설정
+RUN echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && \
+    locale-gen && \
+    update-locale LANG=en_US.UTF-8
 
 # Python 의존성 파일들 복사 (캐시 최적화)
 COPY requirements_fastapi.txt ./
@@ -28,7 +40,7 @@ COPY firebase.json ./
 RUN useradd -m appuser && chown -R appuser:appuser /app
 USER appuser
 
-# Cloud Run 포트
+# Cloud Run 포트    
 EXPOSE 8000
 
 # 환경변수 설정

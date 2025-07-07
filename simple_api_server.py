@@ -128,6 +128,21 @@ from typing import Optional, Dict
 from dotenv import load_dotenv
 load_dotenv()
 
+# 🔧 배포 환경에서 UTF-8 인코딩 강제 설정 (한글 깨짐 방지)
+if os.environ.get('NODE_ENV') == 'production':
+    # Cloud Run 환경에서 UTF-8 강제 활성화
+    os.environ['PYTHONIOENCODING'] = 'utf-8'
+    os.environ['PYTHONUTF8'] = '1'
+    os.environ['LANG'] = 'C.UTF-8'
+    os.environ['LC_ALL'] = 'C.UTF-8'
+    
+    # stdout/stderr 인코딩 설정
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    
+    print("🔧 배포 환경 UTF-8 인코딩 강제 설정 완료")
+
 # ========================================
 # 🎯 ADK 표준 에이전트 연결 (새로운 구조)
 # ========================================

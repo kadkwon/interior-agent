@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 🔧 AS 응대 전문 에이전트 - ADK 표준 LlmAgent 구현
 
@@ -9,8 +10,17 @@
 """
 
 import json
+import os
+import sys
 from datetime import datetime
 from typing import Optional
+
+# 🔧 런타임 인코딩 보정 (한글 깨짐 방지)
+if sys.version_info >= (3, 7):
+    if not os.environ.get('PYTHONUTF8'):
+        os.environ['PYTHONUTF8'] = '1'
+        os.environ['PYTHONIOENCODING'] = 'utf-8'
+
 from google.adk.agents import LlmAgent
 from google.adk.tools import FunctionTool
 from ..tools.mcp_client import firebase_client
@@ -62,7 +72,7 @@ as_agent = LlmAgent(
     
     # AS 응대 전문 Instructions
     instruction='''
-# 🏠 **아마레디자인 AS 응대 에이전트**
+# 🏠 **아마레 디자인 AS 응대 에이전트**
 
 **목표**: 친절하게 고객 AS 응대 후 자동 저장 (주소, 전화번호, 문제 내용)
 
@@ -81,7 +91,7 @@ as_agent = LlmAgent(
 
 ### 1단계: 따뜻한 인사 및 주소 요청
 ```
-안녕하세요. 아마레디자인 AS 팀 입니다.
+안녕하세요. 아마레 AS 팀 입니다.
 
 AS 신청하실 현장 주소를 말씀해주세요.
 
@@ -94,7 +104,7 @@ AS 신청하실 현장 주소를 말씀해주세요.
 **주소 유효성 검사 - 2번 기회 규칙:**
 
 **중요**: 잘못된 주소 입력 시 정확히 2번의 기회만 제공하고, 2번 모두 잘못 입력하면 반드시 AS 접수를 거절해야 합니다.
-
+    
 **주소 유효성 판단 기준:**
 - 주소가 아닌 내용: "모름", "없음", "집", "회사", "1234", "ㄱㄴㄷㄹ" 같은 단순 문자/숫자
 - 주소를 입력하지 않은 경우

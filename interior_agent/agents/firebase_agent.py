@@ -66,6 +66,12 @@ async def firestore_delete_document(collection: str, document_id: str, session_i
     }, session_id)
     return format_korean_response(result, "delete_document")
 
+async def firestore_query_collection_group(collection_id: str, limit: Optional[int] = 50, search_term: Optional[str] = None, session_id: Optional[str] = None):
+    """컬렉션 그룹 쿼리 - 전체 문서 검색용"""
+    params = {"collectionId": collection_id, "limit": limit}
+    result = await firebase_client.call_tool("firestore_query_collection_group", params, session_id)
+    return format_korean_response(result, "query_collection_group", search_term)
+
 # ========================================
 # 🤖 Firebase 전문 LlmAgent 정의
 # ========================================
@@ -82,6 +88,7 @@ firebase_agent = LlmAgent(
         FunctionTool(firestore_add_document),
         FunctionTool(firestore_update_document),
         FunctionTool(firestore_delete_document),
+        FunctionTool(firestore_query_collection_group),
     ],
     
     # Firebase 전문 Instructions
@@ -109,6 +116,15 @@ firebase_agent = LlmAgent(
 - "견적서 목록" → firestore_list_documents("estimateVersionsV3") → **도구 결과 그대로 출력**
 - "주소 리스트" → firestore_list_documents("addressesJson") → **도구 결과 그대로 출력**
 - "문서명 상세 조회" → firestore_get_document("컬렉션", "문서명") → **도구 결과 그대로 출력**
+
+### 🔍 **범용 검색 명령 (모든 내부 검색 가능)**
+- **검색 방식**: 
+  - "8284629 비밀번호 찾아줘" → firestore_query_collection_group("addressesJson", limit=100, search_term="8284629")
+  - "수성 효성 찾아줘" → firestore_query_collection_group("addressesJson", limit=100, search_term="수성")
+  - "헤링턴 찾아줘" → firestore_query_collection_group("addressesJson", limit=100, search_term="헤링턴")
+- **검색어 추출**: 사용자 요청에서 핵심 키워드를 search_term으로 전달
+- **검색 대상**: description 필드와 dataJson 문자열 내부 모든 내용
+- **중요**: search_term 파라미터를 반드시 전달해야 필터링이 작동함
 
 ### 3. ✏️ **Firebase 수정 명령 - 문자열 치환 전용**
 - 🚨 **최우선 절대 원칙**: 오직 문자열 치환만 사용! 다른 방법 절대 금지!

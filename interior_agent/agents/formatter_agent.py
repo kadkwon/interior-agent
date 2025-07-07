@@ -2,12 +2,29 @@
 🎨 Firebase 응답 포맷팅 전용 도구 - 영어 필드명을 한글로 변환
 
 ✨ 이 모듈은 순수 함수로 구성되어 다른 에이전트들이 공통으로 사용할 수 있습니다.
+
+📋 주소 데이터베이스 구조:
+- description: "수성 효성 헤링턴 105동 1503호" (실제 주소 정보)
+- dataJson: JSON 문자열 형태의 상세 정보
+  {
+    "date": "",
+    "firstFloorPassword": "1503#1234",
+    "unitPassword": "1234", 
+    "supervisorName": "",
+    "contractAmount": "",
+    "contractDate": "",
+    "phoneLastFourDigits": "",
+    "email": "",
+    "isCompleted": true,
+    "createdAt": "2024-12-24T02:49:35.432Z",
+    "siteNumber": 15
+  }
 """
 
 import json
 from typing import Dict, Any
 
-def format_korean_response(result: Dict[str, Any], operation_type: str) -> str:
+def format_korean_response(result: Dict[str, Any], operation_type: str, search_term: str = None) -> str:
     """MCP 응답을 한글로 가독성 좋게 포맷팅 - instruction 기반 로직"""
     print(f"🎨 [FORMAT] 포맷팅 시작: operation_type={operation_type}")
     print(f"🎨 [FORMAT] 원본 데이터: {str(result)[:200]}...")
@@ -31,13 +48,13 @@ def format_korean_response(result: Dict[str, Any], operation_type: str) -> str:
             return f"❌ 응답 데이터가 없습니다: {str(result)[:100]}..."
         
         # instruction 기반 포맷팅 로직
-        return _format_by_instruction(actual_data, operation_type)
+        return _format_by_instruction(actual_data, operation_type, search_term)
         
     except Exception as e:
         print(f"🎨 [FORMAT] 오류 발생: {str(e)}")
         return f"❌ 응답 처리 중 오류 발생: {str(e)}"
 
-def _format_by_instruction(data: Dict[str, Any], operation_type: str) -> str:
+def _format_by_instruction(data: Dict[str, Any], operation_type: str, search_term: str = None) -> str:
     """instruction 기반 포맷팅 로직"""
     
     # 영어→한글 필드명 매핑
@@ -87,7 +104,8 @@ def _format_by_instruction(data: Dict[str, Any], operation_type: str) -> str:
         formatted = f"📄 문서 목록 ({len(documents)}개):\n\n"
         for doc in documents:
             doc_id = doc.get("id", "ID없음")
-            formatted += f"{doc_id}\n"
+            description = doc.get("data", {}).get("description", "설명없음")
+            formatted += f"{doc_id} - {description}\n"
         return formatted
     
     elif operation_type == "get_document":
@@ -133,6 +151,38 @@ def _format_by_instruction(data: Dict[str, Any], operation_type: str) -> str:
                     except json.JSONDecodeError:
                         pass
         
+        return formatted
+    
+    elif operation_type == "query_collection_group":
+        documents = data.get("documents", [])
+        if not documents:
+            return "🔍 검색 결과가 없습니다."
+        
+        # 검색어가 있으면 필터링
+        if search_term:
+            filtered_docs = []
+            search_lower = search_term.lower()
+            
+            for doc in documents:
+                doc_data = doc.get("data", {})
+                description = doc_data.get("description", "")
+                data_json = doc_data.get("dataJson", "")
+                
+                # description 또는 dataJson에서 검색어 찾기
+                if (search_lower in description.lower()) or (search_lower in data_json.lower()):
+                    filtered_docs.append(doc)
+            
+            documents = filtered_docs
+        
+        if not documents:
+            return f"🔍 '{search_term}' 검색 결과가 없습니다." if search_term else "🔍 검색 결과가 없습니다."
+        
+        formatted = f"🔍 {'검색' if search_term else '조회'} 결과 ({len(documents)}개):\n\n"
+        for doc in documents:
+            doc_id = doc.get("id", "ID없음")
+            doc_data = doc.get("data", {})
+            description = doc_data.get("description", "설명없음")
+            formatted += f"{doc_id} - {description}\n"
         return formatted
     
     elif operation_type == "add_document":

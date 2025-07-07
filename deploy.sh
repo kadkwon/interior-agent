@@ -50,7 +50,7 @@ gcloud run deploy ${SERVICE_NAME} \
   --min-instances 0 \
   --concurrency 80 \
   --timeout 300 \
-  --set-env-vars="NODE_ENV=production,PYTHONUNBUFFERED=1,GOOGLE_GENAI_USE_VERTEXAI=FALSE,GOOGLE_API_KEY=AIzaSyDktjZ4CWOzop8q1xxaVzA4WdM3p3Vguso"
+  --set-env-vars="NODE_ENV=production,PYTHONUNBUFFERED=1,GOOGLE_GENAI_USE_VERTEXAI=FALSE,GOOGLE_API_KEY=AIzaSyDktjZ4CWOzop8q1xxaVzA4WdM3p3Vguso,PYTHONIOENCODING=utf-8,PYTHONUTF8=1,LANG=C.UTF-8,LC_ALL=C.UTF-8"
 
 # 5. 배포 완료 메시지
 SERVICE_URL=$(gcloud run services describe ${SERVICE_NAME} --region=${REGION} --format="value(status.url)")
