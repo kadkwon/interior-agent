@@ -1,21 +1,18 @@
 """
-🤖 인테리어 에이전트 모듈
+🏠 인테리어 에이전트 - ADK 표준 구조
 
-ADK 표준 구조에 따른 하위 에이전트들:
-- firebase_agent: Firebase Firestore 전문 처리
-- email_agent: 이메일 전송 및 서버 관리
-- as_agent: 친절한 고객 AS 응대
-- formatter_agent: 응답 포맷팅 도구
+📋 에이전트 구성:
+- firebase_agent: Firebase/Firestore 전문 처리 (instruction만으로 한글 포맷팅)
+- email_agent: 견적서 이메일 전송 전문 처리
+- as_agent: 친절한 AS 응대 전문 처리
 """
 
 from .firebase_agent import firebase_agent
 from .email_agent import email_agent
 from .as_agent import as_agent
-from .formatter_agent import format_korean_response
 
 __all__ = [
     'firebase_agent',
-    'email_agent',
-    'as_agent',
-    'format_korean_response'
+    'email_agent', 
+    'as_agent'
 ] 
