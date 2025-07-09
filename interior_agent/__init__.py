@@ -17,6 +17,12 @@ from .agent import root_agent, runner, session_service
 from .agents import firebase_agent, email_agent
 from .tools import firebase_client, email_client
 
+# 🔧 AS 전용 루트 에이전트 import 추가
+from .as_root_agent import as_root_agent, as_runner, as_session_service
+
+# 📊 견적 상담 전용 루트 에이전트 import 추가  
+from .estimate_root_agent import estimate_root_agent, estimate_runner, estimate_session_service
+
 __version__ = "1.0.0"
 
 __all__ = [
@@ -26,7 +32,13 @@ __all__ = [
     'firebase_agent',
     'email_agent',
     'firebase_client',
-    'email_client'
+    'email_client',
+    'as_root_agent',
+    'as_runner',
+    'as_session_service',
+    'estimate_root_agent',
+    'estimate_runner', 
+    'estimate_session_service'
 ]
 
 # ========================================

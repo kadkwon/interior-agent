@@ -159,6 +159,9 @@ try:
     # 🔧 AS 전용 루트 에이전트 import 추가
     from interior_agent.as_root_agent import as_root_agent, as_runner, as_session_service
     
+    # 📊 견적 상담 전용 루트 에이전트 import 추가
+    from interior_agent.estimate_root_agent import estimate_root_agent, estimate_runner, estimate_session_service
+    
     print("✅ ADK 표준 인테리어 에이전트 로드 성공")
     print(f"📦 메인 에이전트: {root_agent.name}")
     print(f"🔀 하위 에이전트: {len(root_agent.sub_agents)}개")
@@ -169,6 +172,12 @@ try:
     print(f"🔧 AS 전용 루트 에이전트 로드: {as_root_agent.name}")
     print(f"🔧 AS 전용 하위 에이전트: {len(as_root_agent.sub_agents)}개")
     for i, sub_agent in enumerate(as_root_agent.sub_agents):
+        print(f"   {i+1}. {sub_agent.name}")
+    
+    # 📊 견적 상담 전용 루트 에이전트 로드 확인
+    print(f"📊 견적 상담 전용 루트 에이전트 로드: {estimate_root_agent.name}")
+    print(f"📊 견적 상담 전용 하위 에이전트: {len(estimate_root_agent.sub_agents)}개")
+    for i, sub_agent in enumerate(estimate_root_agent.sub_agents):
         print(f"   {i+1}. {sub_agent.name}")
     
     # ADK 정보 출력
@@ -204,6 +213,11 @@ except ImportError as e:
         as_root_agent = interior_agent  # 폴백 모드에서는 같은 에이전트 사용
         as_runner = runner  # 폴백 모드에서는 같은 runner 사용
         as_session_service = session_service  # 폴백 모드에서는 같은 세션 서비스 사용
+        
+        # 📊 견적 상담 에이전트도 폴백으로 설정
+        estimate_root_agent = interior_agent  # 폴백 모드에서는 같은 에이전트 사용
+        estimate_runner = runner  # 폴백 모드에서는 같은 runner 사용
+        estimate_session_service = session_service  # 폴백 모드에서는 같은 세션 서비스 사용
         
         ADK_AVAILABLE = True
         print("🔄 폴백 모드로 활성화됨")
@@ -273,6 +287,9 @@ def get_agent_by_session_id(session_id: str):
     if session_id.startswith("customer-service-"):
         print(f"🔧 AS 전용 루트 에이전트 선택: {session_id}")
         return as_root_agent, "as_root_agent", as_runner
+    elif session_id.startswith("estimate-consultation-"):
+        print(f"📊 견적 상담 전용 루트 에이전트 선택: {session_id}")
+        return estimate_root_agent, "estimate_root_agent", estimate_runner
     elif session_id.startswith("react-session-"):
         print(f"🏠 전체 루트 에이전트 선택: {session_id}")
         return root_agent, "all_agents", runner
@@ -380,6 +397,7 @@ async def health():
         "agent_structure": "ADK_Standard_with_SessionRouting" if ADK_AVAILABLE else "Unavailable",
         "supported_session_patterns": [
             "customer-service-*: AS 전용 에이전트",
+            "estimate-consultation-*: 견적 상담 전용 에이전트",
             "react-session-*: 전체 에이전트",
             "기타: 기본 전체 에이전트"
         ]
@@ -398,7 +416,9 @@ async def status():
             "main_agent": root_agent.name if ADK_AVAILABLE else None,
             "sub_agents": len(root_agent.sub_agents) if ADK_AVAILABLE else 0,
             "as_root_agent": as_root_agent.name if ADK_AVAILABLE else None,
-            "as_sub_agents": len(as_root_agent.sub_agents) if ADK_AVAILABLE else 0
+            "as_sub_agents": len(as_root_agent.sub_agents) if ADK_AVAILABLE else 0,
+            "estimate_root_agent": estimate_root_agent.name if ADK_AVAILABLE else None,
+            "estimate_sub_agents": len(estimate_root_agent.sub_agents) if ADK_AVAILABLE else 0
         }
     }
 
